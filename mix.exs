@@ -2,7 +2,7 @@ defmodule DowserElasticsearch.MixProject do
   use Mix.Project
 
   @source_url "https://github.com/GRoguelon/dowser_elasticsearch"
-  @version "0.1.0"
+  @version "0.1.1"
 
   def project do
     [
@@ -61,7 +61,6 @@ defmodule DowserElasticsearch.MixProject do
           Dowser.Elasticsearch.Repository
         ],
         "Type casting": [
-          Dowser.Elasticsearch.TypeCodec,
           Dowser.Elasticsearch.Codec,
           Dowser.Elasticsearch.Mappable,
           Dowser.Elasticsearch.MappingCacher,
@@ -79,7 +78,7 @@ defmodule DowserElasticsearch.MixProject do
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
-      {:dowser_client, "~> 0.1"},
+      {:dowser_client, "~> 0.1.1"},
       {:req, "~> 0.7", optional: true},
       {:hackney, "~> 4.6", optional: true},
       {:jason, "~> 1.4", optional: true},

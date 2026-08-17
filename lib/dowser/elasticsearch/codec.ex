@@ -41,7 +41,7 @@ defmodule Dowser.Elasticsearch.Codec do
   ## Field-level casting
 
   Per-field casting is dispatched via `load/2`/`dump/2`, built with
-  `Dowser.Client.CodecBuilder` from the table below. Only the field types
+  `Dowser.Client.Codec.Builder` from the table below. Only the field types
   JSON can't natively represent are cast; any other mapping entry — and
   `nil` values — fall back to identity.
 
@@ -59,7 +59,7 @@ defmodule Dowser.Elasticsearch.Codec do
   Add field types by inheriting the built-in casts:
 
       defmodule MyApp.Codec do
-        use Dowser.Client.CodecBuilder, inherit: Dowser.Elasticsearch.Codec
+        use Dowser.Client.Codec.Builder, inherit: Dowser.Elasticsearch.Codec
 
         cast %{"type" => "scaled_float"}, MyApp.Fields.ScaledFloat
       end
@@ -74,7 +74,7 @@ defmodule Dowser.Elasticsearch.Codec do
 
   @behaviour Dowser.Client.Codec
 
-  use Dowser.Client.CodecBuilder
+  use Dowser.Client.Codec.Builder
 
   alias Dowser.Elasticsearch.Fields
   alias Dowser.Elasticsearch.Mappable

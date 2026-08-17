@@ -5,6 +5,36 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.1] - 2026-08-17
+
+### Added
+
+- `Dowser.Elasticsearch.Repository` now raises an `ArgumentError` at compile
+  time if two selected functions would generate the same name, naming the
+  clash instead of silently producing broken duplicate definitions.
+
+### Changed
+
+- `Dowser.Elasticsearch.Repository` renames the generated `Document`
+  functions that would otherwise share a base name with a same-named
+  function from another selected module: `create` → `create_doc`, `delete` →
+  `delete_doc`, `exists`/`exists?` → `doc_exists`/`doc_exists?`, `get` →
+  `get_doc`, `index` → `index_doc`, `update` → `update_doc`. Repositories
+  built with `use Dowser.Elasticsearch.Repository` must switch to the new
+  names; `Dowser.Elasticsearch.Document`'s own functions are unaffected.
+- `Dowser.Elasticsearch.TypeCodec` (the `:codec_adapter` implementation) and
+  `Dowser.Elasticsearch.Codec` (the field-level dispatcher it delegated to)
+  are merged into a single `Dowser.Elasticsearch.Codec`, which now
+  implements both. Set `codec_adapter: Dowser.Elasticsearch.Codec` instead
+  of `Dowser.Elasticsearch.TypeCodec`; custom field casts still inherit from
+  `Dowser.Elasticsearch.Codec` the same way.
+- `Dowser.Elasticsearch` (the empty top-level module), `Dowser.Elasticsearch.Helpers`,
+  and `Dowser.Elasticsearch.Mappable` no longer generate documentation pages
+  (`@moduledoc false`) — none of them are meant to be used directly.
+- Bumped the `dowser_client` requirement to `~> 0.1.1` and switched to its
+  `Dowser.Client.Codec.Builder` (the `Dowser.Client.CodecBuilder` name is
+  deprecated upstream, though still functional).
+
 ## [0.1.0] - 2026-08-17
 
 Initial release.
@@ -51,7 +81,7 @@ Initial release.
   ranges to and from native Elixir terms against each document's own index
   mapping, at any nesting depth in a response (a bare document, `msearch`
   results, bulk items, …). Built on `Dowser.Elasticsearch.Codec` (the
-  per-field cast dispatcher, extensible via `Dowser.Client.CodecBuilder`) and
+  per-field cast dispatcher, extensible via `Dowser.Client.Codec.Builder`) and
   `Dowser.Elasticsearch.MappingCacher` (a cached, single-flight index-mapping
   fetcher, supervised by the application).
 - `Dowser.Elasticsearch.Error` — the exception every non-2xx response is

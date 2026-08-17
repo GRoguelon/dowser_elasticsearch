@@ -125,15 +125,21 @@ end
 MyApp.Posts.create_index!(%{mappings: %{properties: %{title: %{type: "text"}}}})
 # PUT /posts
 
-{:ok, %{"_id" => id}} = MyApp.Posts.index(%{title: "hello"})
+{:ok, %{"_id" => id}} = MyApp.Posts.index_doc(%{title: "hello"})
 # POST /posts/_doc
 
 MyApp.Posts.search!(%{query: %{match_all: %{}}})
 # GET /posts/_search
 
-MyApp.Posts.exists?(id)
+MyApp.Posts.doc_exists?(id)
 # HEAD /posts/_doc/:id — true/false
 ```
+
+A handful of `Document` functions are generated under a different name to
+keep them distinct from other modules' functions (`index` → `index_doc`,
+`exists`/`exists?` → `doc_exists`/`doc_exists?`, `create` → `create_doc`,
+`delete` → `delete_doc`, `get` → `get_doc`, `update` → `update_doc`) — see
+`Dowser.Elasticsearch.Repository` for the full rename table.
 
 `:index` also accepts a 1-arity function for a *dynamic* (e.g. per-tenant or
 time-based) index. The generated functions then take a *term* — positionally
@@ -148,7 +154,7 @@ defmodule MyApp.TenantLogs do
   def index_name(tenant), do: "logs_#{tenant}"
 end
 
-MyApp.TenantLogs.index(%{message: "boom"}, "acme")
+MyApp.TenantLogs.index_doc(%{message: "boom"}, "acme")
 # POST /logs_acme/_doc
 
 MyApp.TenantLogs.search(%{query: %{match_all: %{}}}, index: "acme")
