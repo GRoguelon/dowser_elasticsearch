@@ -37,6 +37,13 @@ defmodule Dowser.Elasticsearch.Repository do
       variants too. Without `:only`/`:except`, every index-related function
       of all three modules is generated.
 
+  Two functions selected from different modules can end up sharing the same
+  base name (e.g. a future endpoint named `create` in more than one module).
+  `renames/0` below is a fixed table renaming such functions (`!`/`?`
+  variants follow the rename); `use` raises an `ArgumentError` naming the
+  clash if it finds one that `renames/0` does not cover, so the fix is to add
+  an entry there rather than to work around it at the call site.
+
   Only index-related functions can be generated; functions that do not target
   an index (`reindex`, `scroll`, templates, …) never are — call their module
   directly.
@@ -48,12 +55,30 @@ defmodule Dowser.Elasticsearch.Repository do
     search: Dowser.Elasticsearch.Search
   ]
 
+  # Renames generated functions that would otherwise collide with another
+  # selected module's function of the same base name. Keyed by
+  # `{module, base_name}`, valued with the replacement base name — add an
+  # entry here when a new endpoint collides with one from another module.
+  @spec renames() :: %{optional({module(), atom()}) => atom()}
+  defp renames do
+    %{
+      {Dowser.Elasticsearch.Document, :create} => :create_doc,
+      {Dowser.Elasticsearch.Document, :delete} => :delete_doc,
+      {Dowser.Elasticsearch.Document, :exists} => :doc_exists,
+      {Dowser.Elasticsearch.Document, :get} => :get_doc,
+      {Dowser.Elasticsearch.Document, :index} => :index_doc,
+      {Dowser.Elasticsearch.Document, :update} => :update_doc
+    }
+  end
+
   defmacro __using__(opts) do
     index = fetch_index!(opts)
     style = index_style!(index)
     selected = select!(Keyword.get(opts, :only), Keyword.get(opts, :except))
+    renamed = apply_rename(selected)
+    check_conflicts!(renamed)
 
-    helpers(index, selected) ++ Enum.flat_map(selected, &function_defs(&1, style))
+    helpers(index, renamed) ++ Enum.flat_map(renamed, &function_defs(&1, style))
   end
 
   @doc """
@@ -77,7 +102,9 @@ defmodule Dowser.Elasticsearch.Repository do
       end
 
     opts_helper =
-      if Enum.any?(selected, fn {_key, _mod, _name, {spec, _arity, _kind}} -> spec == :opts end) do
+      if Enum.any?(selected, fn {_key, _mod, _call_name, _def_name, {spec, _arity, _kind}} ->
+           spec == :opts
+         end) do
         quote do
           defp __repository_opts__(opts) do
             {term, opts} = Keyword.pop(opts, :index)
@@ -89,51 +116,55 @@ defmodule Dowser.Elasticsearch.Repository do
     Enum.reject([index_helper, opts_helper], &is_nil/1)
   end
 
-  defp function_defs({_key, mod, name, {index_spec, arity, kind}}, style) do
-    variants =
+  defp function_defs({_key, mod, call_name, def_name, {index_spec, arity, kind}}, style) do
+    {call_variants, def_variants} =
       case kind do
         :pair ->
-          [name, :"#{name}!"]
+          {[call_name, :"#{call_name}!"], [def_name, :"#{def_name}!"]}
 
         :predicate ->
-          [name, :"#{name}?"]
+          {[call_name, :"#{call_name}?"], [def_name, :"#{def_name}?"]}
       end
 
-    Enum.map(variants, &build_def(mod, &1, index_spec, arity, style))
+    call_variants
+    |> Enum.zip(def_variants)
+    |> Enum.map(fn {call_name, def_name} ->
+      build_def(mod, call_name, def_name, index_spec, arity, style)
+    end)
   end
 
-  defp build_def(mod, name, :opts, arity, _style) do
+  defp build_def(mod, call_name, def_name, :opts, arity, _style) do
     lead = Macro.generate_arguments(arity - 1, __MODULE__)
 
     quote do
-      @doc unquote(delegate_doc(mod, name, arity))
-      def unquote(name)(unquote_splicing(lead), opts \\ []) do
-        unquote(mod).unquote(name)(unquote_splicing(lead), __repository_opts__(opts))
+      @doc unquote(delegate_doc(mod, call_name, arity))
+      def unquote(def_name)(unquote_splicing(lead), opts \\ []) do
+        unquote(mod).unquote(call_name)(unquote_splicing(lead), __repository_opts__(opts))
       end
     end
   end
 
-  defp build_def(mod, name, {:pos, position}, arity, :dynamic) do
+  defp build_def(mod, call_name, def_name, {:pos, position}, arity, :dynamic) do
     args = Macro.generate_arguments(arity - 1, __MODULE__)
     term = Enum.at(args, position)
     call_args = List.replace_at(args, position, quote(do: __repository_index__(unquote(term))))
 
     quote do
-      @doc unquote(delegate_doc(mod, name, arity))
-      def unquote(name)(unquote_splicing(args), opts \\ []) do
-        unquote(mod).unquote(name)(unquote_splicing(call_args), opts)
+      @doc unquote(delegate_doc(mod, call_name, arity))
+      def unquote(def_name)(unquote_splicing(args), opts \\ []) do
+        unquote(mod).unquote(call_name)(unquote_splicing(call_args), opts)
       end
     end
   end
 
-  defp build_def(mod, name, {:pos, position}, arity, :static) do
+  defp build_def(mod, call_name, def_name, {:pos, position}, arity, :static) do
     args = Macro.generate_arguments(arity - 2, __MODULE__)
     call_args = List.insert_at(args, position, quote(do: __repository_index__(nil)))
 
     quote do
-      @doc unquote(delegate_doc(mod, name, arity))
-      def unquote(name)(unquote_splicing(args), opts \\ []) do
-        unquote(mod).unquote(name)(unquote_splicing(call_args), opts)
+      @doc unquote(delegate_doc(mod, call_name, arity))
+      def unquote(def_name)(unquote_splicing(args), opts \\ []) do
+        unquote(mod).unquote(call_name)(unquote_splicing(call_args), opts)
       end
     end
   end
@@ -242,5 +273,37 @@ defmodule Dowser.Elasticsearch.Repository do
     Keyword.get(@modules, key) ||
       raise ArgumentError,
             "unknown module key #{inspect(key)}; known keys: #{inspect(Keyword.keys(@modules))}"
+  end
+
+  ## Private functions — renaming
+
+  defp apply_rename(selected) do
+    table = renames()
+
+    Enum.map(selected, fn {key, mod, name, meta} ->
+      def_name =
+        Enum.find_value(table, name, fn {rename_key, new_name} ->
+          if rename_key == {mod, name} do
+            new_name
+          end
+        end)
+
+      {key, mod, name, def_name, meta}
+    end)
+  end
+
+  defp check_conflicts!(renamed) do
+    renamed
+    |> Enum.group_by(fn {_key, _mod, _call_name, def_name, _meta} -> def_name end)
+    |> Enum.each(fn {def_name, entries} ->
+      if length(entries) > 1 do
+        mods = Enum.map(entries, fn {_key, mod, _call_name, _def_name, _meta} -> inspect(mod) end)
+
+        raise ArgumentError,
+              "conflicting repository function name #{inspect(def_name)} generated from " <>
+                "#{Enum.join(mods, " and ")}; add an entry to renames/0 in " <>
+                "Dowser.Elasticsearch.Repository to disambiguate"
+      end
+    end)
   end
 end

@@ -50,12 +50,12 @@ defmodule Dowser.Elasticsearch.RepositoryTest do
     test "positional index arguments disappear" do
       {port, server} = start_server()
 
-      assert {:ok, _} = StaticRepo.get("1", config: config(port))
+      assert {:ok, _} = StaticRepo.get_doc("1", config: config(port))
       assert Task.await(server).path == "/probes/_doc/1"
 
       {port, server} = start_server()
 
-      assert {:ok, _} = StaticRepo.index(%{"title" => "hi"}, config: config(port))
+      assert {:ok, _} = StaticRepo.index_doc(%{"title" => "hi"}, config: config(port))
       assert Task.await(server).path == "/probes/_doc"
 
       {port, server} = start_server()
@@ -80,18 +80,18 @@ defmodule Dowser.Elasticsearch.RepositoryTest do
       Task.await(server)
 
       {port, server} = start_server(HTTPStub.head_response(404))
-      assert {:ok, false} = StaticRepo.exists("1", config: config(port))
+      assert {:ok, false} = StaticRepo.doc_exists("1", config: config(port))
       Task.await(server)
 
       {port, server} = start_server(HTTPStub.head_response(200))
-      assert StaticRepo.exists?("1", config: config(port)) == true
+      assert StaticRepo.doc_exists?("1", config: config(port)) == true
       Task.await(server)
     end
 
     test "unselected functions are not generated" do
       refute function_exported?(StaticRepo, :msearch, 2)
       refute function_exported?(StaticRepo, :count, 2)
-      refute function_exported?(StaticRepo, :delete, 2)
+      refute function_exported?(StaticRepo, :delete_doc, 2)
     end
   end
 
@@ -106,7 +106,7 @@ defmodule Dowser.Elasticsearch.RepositoryTest do
     test "positional index arguments become terms" do
       {port, server} = start_server()
 
-      assert {:ok, _} = DynamicRepo.get("day1", "1", config: config(port))
+      assert {:ok, _} = DynamicRepo.get_doc("day1", "1", config: config(port))
       assert Task.await(server).path == "/my_index_day1/_doc/1"
     end
 
@@ -128,6 +128,27 @@ defmodule Dowser.Elasticsearch.RepositoryTest do
       refute function_exported?(ExceptRepo, :msearch, 2)
       refute function_exported?(ExceptRepo, :get, 2)
       refute function_exported?(ExceptRepo, :refresh, 1)
+    end
+  end
+
+  describe "cross-module name collisions" do
+    test "no two API modules expose a repository function under the same name" do
+      names =
+        for mod <- [
+              Dowser.Elasticsearch.Document,
+              Dowser.Elasticsearch.Index,
+              Dowser.Elasticsearch.Search
+            ],
+            {name, _meta} <- mod.__repository__() do
+          name
+        end
+
+      duplicates = names -- Enum.uniq(names)
+
+      assert duplicates == [],
+             "these repository function names are shared by more than one module: " <>
+               "#{inspect(duplicates)}; add an entry to `renames/0` in " <>
+               "Dowser.Elasticsearch.Repository to disambiguate them"
     end
   end
 
