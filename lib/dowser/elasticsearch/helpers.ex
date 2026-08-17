@@ -1,8 +1,5 @@
 defmodule Dowser.Elasticsearch.Helpers do
-  @moduledoc """
-  Shared plumbing for the API modules: result parsing, path building and
-  option handling.
-  """
+  @moduledoc false
 
   alias Dowser.Client.Response
   alias Dowser.Elasticsearch.Error
