@@ -79,7 +79,7 @@ defmodule DowserElasticsearch.MixProject do
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
-      {:dowser_client, path: "../dowser_client"},
+      {:dowser_client, "~> 0.1"},
       {:req, "~> 0.7", optional: true},
       {:hackney, "~> 4.6", optional: true},
       {:jason, "~> 1.4", optional: true},
