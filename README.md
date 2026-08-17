@@ -17,7 +17,7 @@ the endpoint itself — instead of a hand-rolled query builder.
   the index-related functions of `Search`, `Document`, and `Index` to a
   fixed or computed index, so your code stops repeating `index: "posts"` on
   every call.
-- **Optional automatic type casting.** `Dowser.Elasticsearch.TypeCodec` casts
+- **Optional automatic type casting.** `Dowser.Elasticsearch.Codec` casts
   dates, IPs, and other Elasticsearch types to and from native Elixir terms,
   per index mapping, with no per-call option needed.
 - **Bring your own HTTP/JSON stack.** Transport is handled by
@@ -164,7 +164,7 @@ directly.
 
 By default, response bodies come back as plain decoded JSON — dates, IPs and
 other Elasticsearch types stay strings. Setting
-`Dowser.Elasticsearch.TypeCodec` as `:codec_adapter` casts them automatically,
+`Dowser.Elasticsearch.Codec` as `:codec_adapter` casts them automatically,
 per index mapping, on every call to `Search` and `Document`:
 
 ```elixir
@@ -172,7 +172,7 @@ config :dowser_client,
   configs: [
     default: [
       endpoint: "http://localhost:9200",
-      codec_adapter: Dowser.Elasticsearch.TypeCodec
+      codec_adapter: Dowser.Elasticsearch.Codec
     ]
   ]
 ```

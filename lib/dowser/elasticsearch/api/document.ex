@@ -26,7 +26,7 @@ defmodule Dowser.Elasticsearch.Document do
   `:json_adapter` and `:http_opts` (including `:headers`).
 
   Values are cast automatically wherever `:codec_adapter` is set to
-  `Dowser.Elasticsearch.TypeCodec` — no per-call option needed.
+  `Dowser.Elasticsearch.Codec` — no per-call option needed.
 
   On a 2xx response every function returns `{:ok, body}` with the decoded
   response body. A non-2xx response returns

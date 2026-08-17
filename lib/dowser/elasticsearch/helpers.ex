@@ -96,7 +96,7 @@ defmodule Dowser.Elasticsearch.Helpers do
 
   @doc """
   Merges `extra` into `opts[:codec_opts]` — supplying the context
-  `Dowser.Elasticsearch.TypeCodec` needs (e.g. `:index`) for an endpoint's
+  `Dowser.Elasticsearch.Codec` needs (e.g. `:index`) for an endpoint's
   request/response shape, without overwriting any key the caller already set
   there themselves.
   """

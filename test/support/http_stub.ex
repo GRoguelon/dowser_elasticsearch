@@ -20,10 +20,10 @@ defmodule Dowser.Elasticsearch.HTTPStub do
 
   @doc """
   Config options pointing at the stub server, with
-  `Dowser.Elasticsearch.TypeCodec` set as `:codec_adapter`.
+  `Dowser.Elasticsearch.Codec` set as `:codec_adapter`.
   """
   def config_with_codec_adapter(port) do
-    [endpoint: "http://127.0.0.1:#{port}", codec_adapter: Dowser.Elasticsearch.TypeCodec]
+    [endpoint: "http://127.0.0.1:#{port}", codec_adapter: Dowser.Elasticsearch.Codec]
   end
 
   @doc """

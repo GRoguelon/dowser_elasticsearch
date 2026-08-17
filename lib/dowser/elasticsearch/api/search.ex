@@ -25,7 +25,7 @@ defmodule Dowser.Elasticsearch.Search do
   `:json_adapter` and `:http_opts` (including `:headers`).
 
   Values are cast automatically wherever `:codec_adapter` is set to
-  `Dowser.Elasticsearch.TypeCodec` — no per-call option needed.
+  `Dowser.Elasticsearch.Codec` — no per-call option needed.
 
   On a 2xx response every function returns `{:ok, body}` with the decoded
   response body. A non-2xx response returns
@@ -60,7 +60,7 @@ defmodule Dowser.Elasticsearch.Search do
       |> Dowser.Elasticsearch.Search.search(index: "posts")
 
   Every key in the response is cast per `:keys`. Wherever `:type_codec` is
-  configured (see `Dowser.Elasticsearch.TypeCodec`), each hit's `_source` is
+  configured (see `Dowser.Elasticsearch.Codec`), each hit's `_source` is
   additionally cast against its own index mapping (dates become `DateTime`,
   IPs become `:inet` tuples, and so on) — automatically, at any nesting
   depth, so `msearch/2`, `search_template/2`, `scroll/2` and the rest get the
