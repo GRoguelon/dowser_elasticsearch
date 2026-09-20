@@ -305,6 +305,76 @@ defmodule Dowser.Elasticsearch.CodecTest do
     end
   end
 
+  describe "decode/2 — a subtree the mapping declares opaque" do
+    @opaque_mapping %{
+      "properties" => %{
+        "title" => %{"type" => "keyword"},
+        "roster" => %{"type" => "flattened"},
+        "stash" => %{"type" => "object", "enabled" => false}
+      }
+    }
+
+    test "a flattened field's keys are never run through key_fn" do
+      HTTPStub.start_mapping_cacher!(@opaque_mapping)
+
+      body = %{
+        "_index" => "posts",
+        "_source" => %{
+          "title" => "hi",
+          "roster" => %{"Managed Care Biller" => "Sam", "Division" => "WEST"}
+        }
+      }
+
+      assert %{_source: %{title: "hi", roster: roster}} =
+               Codec.decode(body, decode_opts(key_fn: &String.to_atom/1))
+
+      # The mapping enumerates `title`, so that key is safe to cast; it says
+      # nothing about what is inside `roster`, so those stay strings.
+      assert Map.keys(roster) |> Enum.sort() == ["Division", "Managed Care Biller"]
+    end
+
+    test "an object with enabled: false is left alone too" do
+      HTTPStub.start_mapping_cacher!(@opaque_mapping)
+
+      body = %{"_index" => "posts", "_source" => %{"stash" => %{"whatever" => "x"}}}
+
+      assert %{_source: %{stash: %{"whatever" => "x"}}} =
+               Codec.decode(body, decode_opts(key_fn: &String.to_atom/1))
+    end
+
+    test "creates no atoms, however many keys the document carries" do
+      HTTPStub.start_mapping_cacher!(@opaque_mapping)
+
+      body = %{
+        "_index" => "posts",
+        "_source" => %{"roster" => Map.new(1..200, &{"key_from_the_document_#{&1}", "v"})}
+      }
+
+      before = :erlang.system_info(:atom_count)
+      Codec.decode(body, decode_opts(key_fn: &String.to_atom/1))
+
+      assert :erlang.system_info(:atom_count) == before
+    end
+
+    test "values inside are not cast either — the mapping describes none of them" do
+      HTTPStub.start_mapping_cacher!(@opaque_mapping)
+
+      body = %{"_index" => "posts", "_source" => %{"roster" => %{"joined" => "2026-08-11"}}}
+
+      assert %{"_source" => %{"roster" => %{"joined" => "2026-08-11"}}} =
+               Codec.decode(body, decode_opts())
+    end
+
+    test "a list of flattened objects is left alone" do
+      HTTPStub.start_mapping_cacher!(@opaque_mapping)
+
+      body = %{"_index" => "posts", "_source" => %{"roster" => [%{"A B" => 1}, %{"C D" => 2}]}}
+
+      assert %{_source: %{roster: [%{"A B" => 1}, %{"C D" => 2}]}} =
+               Codec.decode(body, decode_opts(key_fn: &String.to_atom/1))
+    end
+  end
+
   describe "decode/2 — opts[:source] (Document.get_source/3 shape)" do
     test "a bare source with no embedded _index uses opts[:index]" do
       HTTPStub.start_mapping_cacher!(@mapping)
@@ -384,6 +454,27 @@ defmodule Dowser.Elasticsearch.CodecTest do
                %{"title" => "hello"}
 
       assert Codec.encode(document, context_opts(index: "posts")) == document
+    end
+  end
+
+  describe "encode/2 — a subtree the mapping declares opaque" do
+    test "a flattened source passes through untouched" do
+      HTTPStub.start_mapping_cacher!(%{
+        "properties" => %{
+          "published_at" => %{"type" => "date", "format" => "strict_date_optional_time"},
+          "roster" => %{"type" => "flattened"}
+        }
+      })
+
+      source = %{
+        "published_at" => ~U[2026-08-11 00:00:00Z],
+        "roster" => %{"Managed Care Biller" => "Sam"}
+      }
+
+      assert Codec.encode(source, context_opts(index: "posts")) == %{
+               "published_at" => "2026-08-11T00:00:00Z",
+               "roster" => %{"Managed Care Biller" => "Sam"}
+             }
     end
   end
 

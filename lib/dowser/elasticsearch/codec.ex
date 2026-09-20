@@ -38,6 +38,29 @@ defmodule Dowser.Elasticsearch.Codec do
   `Dowser.Elasticsearch.MappingCacher` running, or the fetch fails), its values
   pass through unchanged; keys are still cast per `opts[:key_fn]`.
 
+  ### Subtrees the mapping declares opaque
+
+  A `flattened` field, and an object mapped `"enabled": false`, hold whatever
+  the document put in them — the mapping enumerates none of it. Both are
+  returned exactly as they arrived: values uncast, and keys left as strings
+  rather than run through `opts[:key_fn]`.
+
+  That last part matters under `keys: :atoms`. Atoms are never garbage
+  collected and the table is capped (`:erlang.system_info(:atom_limit)`, a
+  little over a million by default); atomizing keys that come from document
+  content rather than from the mapping turns any writer into a way to exhaust
+  it and bring the node down. A mapped field's name is one of a finite set, so
+  casting it is safe; a `flattened` field's keys are not.
+
+  A mixed result is the price: `%{title: "hi", roster: %{"Managed Care Biller"
+  => "Sam"}}`. The alternative is a cast that is unsafe by construction.
+
+  Note that this is narrower than the whole risk. `keys: :atoms` also casts
+  keys the mapping simply doesn't mention — an unmapped field under
+  `"dynamic": false`, or one added since the mapping was cached. Where a body
+  is wholly untrusted, `keys: :atoms!` (`String.to_existing_atom/1`) is the
+  option that cannot grow the table at all.
+
   ## encode/2
 
   Casts one **document source** against the mapping of `opts[:index]` — never a

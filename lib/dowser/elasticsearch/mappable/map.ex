@@ -1,7 +1,22 @@
 defimpl Dowser.Elasticsearch.Mappable, for: Map do
   import Dowser.Blank, only: [blank?: 1]
 
+  # Mapping entries that describe a subtree without enumerating what is in it:
+  # a `flattened` field holds one opaque object, and an `enabled: false` object
+  # is kept in `_source` but never indexed. Either way the keys inside are
+  # whatever the document put there — so they are neither cast nor, crucially,
+  # run through `key_fn`, which under `keys: :atoms` would turn unbounded
+  # document content into permanent entries in a table that is never collected.
+  defguardp opaque?(mapping)
+            when is_map(mapping) and
+                   (:erlang.map_get("type", mapping) == "flattened" or
+                      :erlang.map_get("enabled", mapping) == false)
+
   ## Public functions
+
+  def encode(value, mapping, _value_fn, _strip_blank) when opaque?(mapping) do
+    value
+  end
 
   def encode(value, mapping, value_fn, strip_blank) do
     fields = mapping_fields(mapping)
@@ -16,6 +31,12 @@ defimpl Dowser.Elasticsearch.Mappable, for: Map do
         Map.put(acc, key, encoded_value)
       end
     end)
+  end
+
+  # Ahead of every other clause: an opaque subtree is returned exactly as it
+  # arrived, whatever it happens to contain.
+  def decode(value, mapping, _key_fn, _value_fn) when opaque?(mapping) do
+    value
   end
 
   def decode(

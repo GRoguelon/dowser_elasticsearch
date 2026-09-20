@@ -83,6 +83,15 @@ what changed, the guide says what to do about it.
 
 ### Fixed
 
+- Under `keys: :atoms`, the keys inside a `flattened` field — and inside an
+  object mapped `"enabled": false` — were run through `String.to_atom/1`. The
+  mapping enumerates none of those keys: they are whatever the document put
+  there, so a writer could mint unbounded atoms in a table that is never
+  collected and is capped a little over a million, crashing the node. Both are
+  now returned as they arrived, keys left as strings and values uncast. Note
+  this is narrower than the whole risk — `keys: :atoms` still casts keys the
+  mapping doesn't mention, and `keys: :atoms!` is the option that cannot grow
+  the table at all.
 - `Dowser.Elasticsearch.MappingCacher` keyed entries by endpoint alone, so two
   contexts pointing at the same cluster with **different credentials** shared
   one cached mapping — whichever fetched first won, and the other was cast
