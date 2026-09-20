@@ -14,11 +14,31 @@ what changed, the guide says what to do about it.
 
 ### Added
 
-- `Dowser.Elasticsearch.Streamer` — walks a search as a `Stream`, over a point
-  in time and `search_after`, with `_shard_doc` appended to the sort as the
-  tiebreaker that makes the paging deterministic. `stream_with_slice/4` runs a
-  function over every slice of one shared point in time at once; a `slice` in
-  the query body walks a single slice, for fanning out across nodes.
+- `Dowser.Elasticsearch.Streamer` — walks a whole search as a lazy `Stream` of
+  hits, over a point in time and `search_after`, with `_shard_doc` appended to
+  the sort as the tiebreaker that makes the paging deterministic. The point in
+  time is opened when enumeration starts and closed when it ends, however it
+  ends.
+
+  ```elixir
+  %{query: %{match_all: %{}}, size: 1_000}
+  |> Dowser.Elasticsearch.Streamer.stream(index: "posts")
+  |> Enum.each(&process/1)
+  ```
+
+  `stream_with_slice/4` runs a function over every slice of one shared point in
+  time at once — a function rather than a stream, because a lazy stream handed
+  back out of a task would run every page in the caller. A `slice` in the query
+  body walks a single slice instead, for fanning out across nodes.
+
+  ```elixir
+  %{query: %{match_all: %{}}, size: 1_000}
+  |> Dowser.Elasticsearch.Streamer.stream_with_slice(4, &Enum.count/1, index: "posts")
+  |> Enum.sum()
+  ```
+
+  Neither has a bang variant: a stream has nothing to unwrap, and raises on
+  enumeration anyway.
 - A `:codec` option on every API function, choosing the field codec
   `Dowser.Elasticsearch.Codec` dispatches `load/2`/`dump/2` through for one
   request. It resolves most-specific-first: request, then context (alongside
