@@ -165,8 +165,17 @@ defmodule Dowser.Elasticsearch.Streamer do
   Takes everything `stream/2` does, plus:
 
     * `:max_concurrency` — how many slices run at once. Defaults to
-      `slice_nbr`, so every slice is in flight; lower it to bound the load a
-      walk puts on the cluster.
+      `slice_nbr`, so every slice you asked for is actually in flight.
+
+      Note this is *not* `Task.async_stream/3`'s default of
+      `System.schedulers_online/0`, nor capped by it. A slice spends its time
+      waiting on Elasticsearch, and a process blocked on a socket occupies no
+      scheduler — so the limit that matters is what the cluster will take, not
+      how many cores this machine has. Capping 32 slices at 10 schedulers
+      makes the walk four times slower for nothing.
+
+      Lower it when `stream_fn` is the expensive part rather than the
+      fetching, or to be gentler on the cluster.
     * `:timeout` — per slice, not per request. Defaults to `:infinity`, since
       a slice runs as long as it takes to walk; `Task.async_stream/3` would
       otherwise give up after five seconds.
