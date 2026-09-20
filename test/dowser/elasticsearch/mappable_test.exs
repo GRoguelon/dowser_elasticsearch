@@ -5,7 +5,8 @@ defmodule Dowser.Elasticsearch.MappableTest do
 
   # A value_fn that just returns the value unchanged, so these tests isolate
   # Mappable's own traversal/strip_blank behavior from field-level casting
-  # (covered separately by Dowser.Elasticsearch.CodecTest).
+  # (covered separately by Dowser.Elasticsearch.DecoderTest and
+  # Dowser.Elasticsearch.EncoderTest).
   defp identity(value, _mapping), do: value
 
   describe "encode/4 — strip_blank: false (default)" do

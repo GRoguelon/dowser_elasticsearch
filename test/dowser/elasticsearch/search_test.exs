@@ -22,7 +22,7 @@ defmodule Dowser.Elasticsearch.SearchTest do
       {port, server} = start_server()
 
       assert {:ok, body} =
-               Search.search(%{"query" => %{"match_all" => %{}}}, config: config(port))
+               Search.search(%{"query" => %{"match_all" => %{}}}, context: context(port))
 
       assert body["hits"]["total"]["value"] == 1
 
@@ -36,14 +36,14 @@ defmodule Dowser.Elasticsearch.SearchTest do
     test "targets a single index" do
       {port, server} = start_server()
 
-      assert {:ok, _} = Search.search(%{}, index: "posts", config: config(port))
+      assert {:ok, _} = Search.search(%{}, index: "posts", context: context(port))
       assert Task.await(server).path == "/posts/_search"
     end
 
     test "joins several indices with commas" do
       {port, server} = start_server()
 
-      assert {:ok, _} = Search.search(%{}, index: ["posts", "comments"], config: config(port))
+      assert {:ok, _} = Search.search(%{}, index: ["posts", "comments"], context: context(port))
       assert Task.await(server).path == "/posts,comments/_search"
     end
 
@@ -51,7 +51,7 @@ defmodule Dowser.Elasticsearch.SearchTest do
       {port, server} = start_server()
 
       assert {:ok, _} =
-               Search.search(%{}, index: "posts", params: [routing: "u1"], config: config(port))
+               Search.search(%{}, index: "posts", params: [routing: "u1"], context: context(port))
 
       assert Task.await(server).path == "/posts/_search?routing=u1"
     end
@@ -59,7 +59,7 @@ defmodule Dowser.Elasticsearch.SearchTest do
     test "wraps a 404 in a Dowser.Elasticsearch.Error with type and reason" do
       {port, server} = start_server(@not_found_response)
 
-      assert {:error, error} = Search.search(%{}, index: "missing", config: config(port))
+      assert {:error, error} = Search.search(%{}, index: "missing", context: context(port))
 
       assert %Error{
                status: 404,
@@ -74,7 +74,7 @@ defmodule Dowser.Elasticsearch.SearchTest do
       {port, server} = start_server(@server_error_response)
 
       assert {:error, %Error{status: 500, type: nil, reason: nil, body: %{"message" => "boom"}}} =
-               Search.search(%{}, config: config(port))
+               Search.search(%{}, context: context(port))
 
       Task.await(server)
     end
@@ -85,7 +85,7 @@ defmodule Dowser.Elasticsearch.SearchTest do
       {port, server} = start_server()
 
       assert %{"hits" => %{"total" => %{"value" => 1}}} =
-               Search.search!(%{}, config: config(port))
+               Search.search!(%{}, context: context(port))
 
       Task.await(server)
     end
@@ -94,7 +94,7 @@ defmodule Dowser.Elasticsearch.SearchTest do
       {port, server} = start_server(@not_found_response)
 
       assert_raise Error, ~r/HTTP 404.*no such index/, fn ->
-        Search.search!(%{}, index: "missing", config: config(port))
+        Search.search!(%{}, index: "missing", context: context(port))
       end
 
       Task.await(server)
@@ -106,7 +106,7 @@ defmodule Dowser.Elasticsearch.SearchTest do
       {port, server} = start_server()
 
       searches = [%{}, %{"query" => %{"match_all" => %{}}}]
-      assert {:ok, _} = Search.msearch(searches, config: config(port))
+      assert {:ok, _} = Search.msearch(searches, context: context(port))
 
       req = Task.await(server)
       assert req.method == "POST"
@@ -118,7 +118,7 @@ defmodule Dowser.Elasticsearch.SearchTest do
     test "targets an index" do
       {port, server} = start_server()
 
-      assert {:ok, _} = Search.msearch([%{}, %{}], index: "posts", config: config(port))
+      assert {:ok, _} = Search.msearch([%{}, %{}], index: "posts", context: context(port))
       assert Task.await(server).path == "/posts/_msearch"
     end
   end
@@ -128,7 +128,7 @@ defmodule Dowser.Elasticsearch.SearchTest do
       {port, server} = start_server()
 
       assert {:ok, _} =
-               Search.count(%{"query" => %{"match_all" => %{}}}, config: config(port))
+               Search.count(%{"query" => %{"match_all" => %{}}}, context: context(port))
 
       req = Task.await(server)
       assert req.method == "POST"
@@ -139,7 +139,7 @@ defmodule Dowser.Elasticsearch.SearchTest do
     test "targets an index" do
       {port, server} = start_server()
 
-      assert {:ok, _} = Search.count(%{}, index: "posts", config: config(port))
+      assert {:ok, _} = Search.count(%{}, index: "posts", context: context(port))
       assert Task.await(server).path == "/posts/_count"
     end
   end
@@ -150,7 +150,7 @@ defmodule Dowser.Elasticsearch.SearchTest do
 
       assert {:ok, _} =
                Search.explain(%{"query" => %{"match_all" => %{}}}, "posts", "1",
-                 config: config(port)
+                 context: context(port)
                )
 
       req = Task.await(server)
@@ -164,7 +164,7 @@ defmodule Dowser.Elasticsearch.SearchTest do
     test "POSTs the body to /_field_caps" do
       {port, server} = start_server()
 
-      assert {:ok, _} = Search.field_caps(%{"fields" => ["title"]}, config: config(port))
+      assert {:ok, _} = Search.field_caps(%{"fields" => ["title"]}, context: context(port))
 
       req = Task.await(server)
       assert req.method == "POST"
@@ -176,7 +176,7 @@ defmodule Dowser.Elasticsearch.SearchTest do
       {port, server} = start_server()
 
       assert {:ok, _} =
-               Search.field_caps(%{"fields" => ["title"]}, index: "posts", config: config(port))
+               Search.field_caps(%{"fields" => ["title"]}, index: "posts", context: context(port))
 
       assert Task.await(server).path == "/posts/_field_caps"
     end
@@ -186,7 +186,7 @@ defmodule Dowser.Elasticsearch.SearchTest do
     test "GETs /{index}/_search_shards" do
       {port, server} = start_server()
 
-      assert {:ok, _} = Search.search_shards(index: "posts", config: config(port))
+      assert {:ok, _} = Search.search_shards(index: "posts", context: context(port))
 
       req = Task.await(server)
       assert req.method == "GET"
@@ -200,7 +200,7 @@ defmodule Dowser.Elasticsearch.SearchTest do
 
       assert {:ok, _} =
                Search.terms_enum(%{"field" => "title", "string" => "he"}, "posts",
-                 config: config(port)
+                 context: context(port)
                )
 
       req = Task.await(server)
@@ -228,7 +228,7 @@ defmodule Dowser.Elasticsearch.SearchTest do
       {port, server} = start_server(response)
 
       assert {:ok, ^tile} =
-               Search.search_mvt(%{}, "posts", "location", 2, 1, 3, config: config(port))
+               Search.search_mvt(%{}, "posts", "location", 2, 1, 3, context: context(port))
 
       req = Task.await(server)
       assert req.method == "POST"
@@ -243,7 +243,7 @@ defmodule Dowser.Elasticsearch.SearchTest do
       assert {:ok, _} =
                Search.search_template(%{"id" => "tpl", "params" => %{"q" => "hi"}},
                  index: "posts",
-                 config: config(port)
+                 context: context(port)
                )
 
       req = Task.await(server)
@@ -258,7 +258,7 @@ defmodule Dowser.Elasticsearch.SearchTest do
       {port, server} = start_server()
 
       searches = [%{}, %{"id" => "tpl", "params" => %{}}]
-      assert {:ok, _} = Search.msearch_template(searches, config: config(port))
+      assert {:ok, _} = Search.msearch_template(searches, context: context(port))
 
       req = Task.await(server)
       assert req.method == "POST"
@@ -273,7 +273,7 @@ defmodule Dowser.Elasticsearch.SearchTest do
 
       assert {:ok, _} =
                Search.render_search_template(%{"params" => %{"q" => "hi"}}, "tpl",
-                 config: config(port)
+                 context: context(port)
                )
 
       req = Task.await(server)
@@ -291,7 +291,7 @@ defmodule Dowser.Elasticsearch.SearchTest do
                Search.rank_eval([%{"id" => "q1"}],
                  index: "posts",
                  metric: %{"precision" => %{"k" => 10}},
-                 config: config(port)
+                 context: context(port)
                )
 
       req = Task.await(server)
@@ -309,7 +309,7 @@ defmodule Dowser.Elasticsearch.SearchTest do
       assert {:ok, _} =
                Search.submit_async_search(%{"query" => %{"match_all" => %{}}},
                  index: "posts",
-                 config: config(port)
+                 context: context(port)
                )
 
       req = Task.await(server)
@@ -320,7 +320,7 @@ defmodule Dowser.Elasticsearch.SearchTest do
     test "get_async_search/2 GETs /_async_search/{id}" do
       {port, server} = start_server()
 
-      assert {:ok, _} = Search.get_async_search("abc123", config: config(port))
+      assert {:ok, _} = Search.get_async_search("abc123", context: context(port))
 
       req = Task.await(server)
       assert req.method == "GET"
@@ -330,14 +330,14 @@ defmodule Dowser.Elasticsearch.SearchTest do
     test "get_async_search_status/2 GETs /_async_search/status/{id}" do
       {port, server} = start_server()
 
-      assert {:ok, _} = Search.get_async_search_status("abc123", config: config(port))
+      assert {:ok, _} = Search.get_async_search_status("abc123", context: context(port))
       assert Task.await(server).path == "/_async_search/status/abc123"
     end
 
     test "delete_async_search/2 DELETEs /_async_search/{id}" do
       {port, server} = start_server()
 
-      assert {:ok, _} = Search.delete_async_search("abc123", config: config(port))
+      assert {:ok, _} = Search.delete_async_search("abc123", context: context(port))
 
       req = Task.await(server)
       assert req.method == "DELETE"
@@ -349,7 +349,7 @@ defmodule Dowser.Elasticsearch.SearchTest do
     test "scroll/2 POSTs the scroll id in the body" do
       {port, server} = start_server()
 
-      assert {:ok, _} = Search.scroll("c2Nhbg==", scroll: "1m", config: config(port))
+      assert {:ok, _} = Search.scroll("c2Nhbg==", scroll: "1m", context: context(port))
 
       req = Task.await(server)
       assert req.method == "POST"
@@ -361,7 +361,7 @@ defmodule Dowser.Elasticsearch.SearchTest do
     test "clear_scroll/2 DELETEs with the scroll ids in the body" do
       {port, server} = start_server()
 
-      assert {:ok, _} = Search.clear_scroll(["a", "b"], config: config(port))
+      assert {:ok, _} = Search.clear_scroll(["a", "b"], context: context(port))
 
       req = Task.await(server)
       assert req.method == "DELETE"
@@ -374,7 +374,7 @@ defmodule Dowser.Elasticsearch.SearchTest do
     test "open_point_in_time/4 POSTs /{index}/_pit with keep_alive" do
       {port, server} = start_server()
 
-      assert {:ok, _} = Search.open_point_in_time(%{}, "posts", "1m", config: config(port))
+      assert {:ok, _} = Search.open_point_in_time(%{}, "posts", "1m", context: context(port))
 
       req = Task.await(server)
       assert req.method == "POST"
@@ -390,7 +390,7 @@ defmodule Dowser.Elasticsearch.SearchTest do
     test "close_point_in_time/2 DELETEs /_pit with the id in the body" do
       {port, server} = start_server()
 
-      assert {:ok, _} = Search.close_point_in_time("pit-id", config: config(port))
+      assert {:ok, _} = Search.close_point_in_time("pit-id", context: context(port))
 
       req = Task.await(server)
       assert req.method == "DELETE"
@@ -399,7 +399,7 @@ defmodule Dowser.Elasticsearch.SearchTest do
     end
   end
 
-  describe "type casting via :type_codec" do
+  describe "type casting via :decoder" do
     test "each hit's _source is cast against its own index mapping, at any nesting depth" do
       mapping = %{
         "properties" => %{
@@ -419,7 +419,7 @@ defmodule Dowser.Elasticsearch.SearchTest do
       {port, server} = start_server(response)
 
       assert {:ok, body} =
-               Search.search(%{}, config: HTTPStub.config_with_codec_adapter(port))
+               Search.search(%{}, context: HTTPStub.context_with_casting(port))
 
       [hit] = body["hits"]["hits"]
       assert hit["_source"]["published_at"] == ~U[2026-08-11 00:00:00.000Z]
@@ -428,7 +428,7 @@ defmodule Dowser.Elasticsearch.SearchTest do
     end
   end
 
-  defp config(port), do: HTTPStub.config(port)
+  defp context(port), do: HTTPStub.context(port)
 
   defp start_server(response \\ @response), do: HTTPStub.start_server(response)
 end

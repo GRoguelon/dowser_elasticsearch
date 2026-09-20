@@ -15,25 +15,29 @@ defmodule Dowser.Elasticsearch.HTTPStub do
   def head_response(200), do: "HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n"
   def head_response(404), do: "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n"
 
-  @doc "Config options pointing at the stub server."
-  def config(port), do: [endpoint: "http://127.0.0.1:#{port}"]
+  @doc "Context options pointing at the stub server."
+  def context(port), do: [endpoint: "http://127.0.0.1:#{port}"]
 
   @doc """
-  Config options pointing at the stub server, with
-  `Dowser.Elasticsearch.Codec` set as `:codec_adapter`.
+  Context options pointing at the stub server, with
+  `Dowser.Elasticsearch.Decoder`/`Dowser.Elasticsearch.Encoder` wired in.
   """
-  def config_with_codec_adapter(port) do
-    [endpoint: "http://127.0.0.1:#{port}", codec_adapter: Dowser.Elasticsearch.Codec]
+  def context_with_casting(port) do
+    [
+      endpoint: "http://127.0.0.1:#{port}",
+      decoder: Dowser.Elasticsearch.Decoder,
+      encoder: Dowser.Elasticsearch.Encoder
+    ]
   end
 
   @doc """
   Starts `Dowser.Elasticsearch.MappingCacher` for the duration of the calling
   test (via `start_supervised!/1`), returning `mapping` for every
-  `{config, index}` lookup.
+  `{context, index}` lookup.
   """
   def start_mapping_cacher!(mapping) do
     ExUnit.Callbacks.start_supervised!(
-      {Dowser.Elasticsearch.MappingCacher, fetch: fn _config, _index -> {:ok, mapping} end}
+      {Dowser.Elasticsearch.MappingCacher, fetch: fn _context, _index -> {:ok, mapping} end}
     )
   end
 
