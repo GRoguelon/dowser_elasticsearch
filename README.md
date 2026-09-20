@@ -14,7 +14,7 @@ the endpoint itself — instead of a hand-rolled query builder.
   raises. `HEAD` existence checks follow the same idea with a `?` variant
   instead of `!`.
 - **Streaming for large result sets.** `Dowser.Elasticsearch.Streamer` walks a
-  whole search as an Elixir `Stream`, and `stream_with_slice/4` walks several
+  whole search as an Elixir `Stream`, and `stream_slices/4` walks several
   slices of it at once.
 - **A repository pattern for free.** `Dowser.Elasticsearch.Repository` binds
   the index-related functions of `Search`, `Document`, and `Index` to a
@@ -141,12 +141,12 @@ ten hits per round trip, a million documents is a hundred thousand requests.
 
 `search_after` is sequential by construction — a page's cursor is the last hit
 of the page before it — so one stream cannot fetch pages in parallel.
-Slicing is what does: `stream_with_slice/4` splits one point in time into
+Slicing is what does: `stream_slices/4` splits one point in time into
 disjoint subsets and walks them at once.
 
 ```elixir
 %{query: %{match_all: %{}}, size: 1_000}
-|> Streamer.stream_with_slice(4, &Enum.count/1, index: "posts")
+|> Streamer.stream_slices(4, &Enum.count/1, index: "posts")
 |> Enum.sum()
 ```
 

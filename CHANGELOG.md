@@ -26,14 +26,14 @@ what changed, the guide says what to do about it.
   |> Enum.each(&process/1)
   ```
 
-  `stream_with_slice/4` runs a function over every slice of one shared point in
+  `stream_slices/4` runs a function over every slice of one shared point in
   time at once — a function rather than a stream, because a lazy stream handed
   back out of a task would run every page in the caller. A `slice` in the query
   body walks a single slice instead, for fanning out across nodes.
 
   ```elixir
   %{query: %{match_all: %{}}, size: 1_000}
-  |> Dowser.Elasticsearch.Streamer.stream_with_slice(4, &Enum.count/1, index: "posts")
+  |> Dowser.Elasticsearch.Streamer.stream_slices(4, &Enum.count/1, index: "posts")
   |> Enum.sum()
   ```
 

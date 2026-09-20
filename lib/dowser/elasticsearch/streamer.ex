@@ -20,7 +20,7 @@ defmodule Dowser.Elasticsearch.Streamer do
 
   `search_after` is sequential by construction — a page's cursor is the last
   hit of the page before it — so one stream cannot fetch pages in parallel.
-  `stream_with_slice/4` is how you get parallelism; see below.
+  `stream_slices/4` is how you get parallelism; see below.
 
   ## Options
 
@@ -47,14 +47,14 @@ defmodule Dowser.Elasticsearch.Streamer do
 
   ## Slicing
 
-  `stream_with_slice/4` splits the point in time into disjoint subsets and
+  `stream_slices/4` splits the point in time into disjoint subsets and
   walks them at once. Elasticsearch divides first across shards, then within
   each shard by contiguous ranges of Lucene document ids, so the natural
   ceiling is your shard count — more slices than shards subdivides a shard
   rather than adding parallelism.
 
       %{query: %{match_all: %{}}, size: 1_000}
-      |> Dowser.Elasticsearch.Streamer.stream_with_slice(4, &Enum.count/1, index: "posts")
+      |> Dowser.Elasticsearch.Streamer.stream_slices(4, &Enum.count/1, index: "posts")
       |> Enum.sum()
 
   Note what it takes: a function, not a stream. Each slice is consumed inside
@@ -136,13 +136,16 @@ defmodule Dowser.Elasticsearch.Streamer do
   for how many slices to open — the useful number is your shard count, which
   this cannot know — and a function is what the whole call is for.
 
+  Note what it yields: one result per *slice*, not a stream of hits like
+  `stream/2`. The hits are `stream_fn`'s to consume.
+
   `stream_fn` receives a slice's stream and is called **inside** the task that
   owns it, so the hits never cross a process boundary — which is the whole
   point: returning a lazy stream from a task would build it there and then run
   every page back in the caller.
 
       %{query: %{match_all: %{}}, size: 1_000}
-      |> Dowser.Elasticsearch.Streamer.stream_with_slice(4, &Enum.count/1, index: "posts")
+      |> Dowser.Elasticsearch.Streamer.stream_slices(4, &Enum.count/1, index: "posts")
       |> Enum.sum()
 
   The result is a stream of whatever `stream_fn` returned, one per slice, so
@@ -153,7 +156,7 @@ defmodule Dowser.Elasticsearch.Streamer do
   anything else the split needs travels with it; `id` and `max` are computed
   here and win:
 
-      stream_with_slice(%{query: ..., slice: %{field: "_id"}}, 7, &f/1, index: "posts")
+      stream_slices(%{query: ..., slice: %{field: "_id"}}, 7, &f/1, index: "posts")
       # each walk carries %{"field" => "_id", "id" => 0..6, "max" => 7}
 
   All slices share one point in time, opened here and closed when the stream
@@ -185,9 +188,9 @@ defmodule Dowser.Elasticsearch.Streamer do
   A slice that fails raises: an exception from its own walk, or a
   `RuntimeError` naming the slice if the task exited or timed out.
   """
-  @spec stream_with_slice(query(), pos_integer(), (Enumerable.t() -> term()), keyword()) ::
+  @spec stream_slices(query(), pos_integer(), (Enumerable.t() -> term()), keyword()) ::
           Enumerable.t()
-  def stream_with_slice(%{} = query, slice_nbr, stream_fn, opts \\ [])
+  def stream_slices(%{} = query, slice_nbr, stream_fn, opts \\ [])
       when is_integer(slice_nbr) and slice_nbr > 0 and is_function(stream_fn, 1) do
     {index, opts} = Keyword.pop(opts, :index)
     {pit_id, opts} = Keyword.pop(opts, :pit)
@@ -420,7 +423,7 @@ defmodule Dowser.Elasticsearch.Streamer do
       raise ArgumentError,
             "`slice` belongs in the query body, not the options — " <>
               "%{query: ..., slice: %{id: 2, max: 8}}. To walk every slice at " <>
-              "once, see stream_with_slice/4."
+              "once, see stream_slices/4."
     end
   end
 
