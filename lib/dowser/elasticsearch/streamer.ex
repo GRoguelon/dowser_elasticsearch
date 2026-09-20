@@ -54,7 +54,7 @@ defmodule Dowser.Elasticsearch.Streamer do
   rather than adding parallelism.
 
       %{query: %{match_all: %{}}, size: 1_000}
-      |> Dowser.Elasticsearch.Streamer.stream_with_slice(&Enum.count/1, 4, index: "posts")
+      |> Dowser.Elasticsearch.Streamer.stream_with_slice(4, &Enum.count/1, index: "posts")
       |> Enum.sum()
 
   Note what it takes: a function, not a stream. Each slice is consumed inside
@@ -132,17 +132,17 @@ defmodule Dowser.Elasticsearch.Streamer do
   Walks `slice_nbr` slices of one point in time at once, running `stream_fn`
   over each.
 
+  Both are positional because both are required: there is no sensible default
+  for how many slices to open — the useful number is your shard count, which
+  this cannot know — and a function is what the whole call is for.
+
   `stream_fn` receives a slice's stream and is called **inside** the task that
   owns it, so the hits never cross a process boundary — which is the whole
   point: returning a lazy stream from a task would build it there and then run
   every page back in the caller.
 
       %{query: %{match_all: %{}}, size: 1_000}
-      |> Dowser.Elasticsearch.Streamer.stream_with_slice(
-        fn slice -> Enum.count(slice) end,
-        4,
-        index: "posts"
-      )
+      |> Dowser.Elasticsearch.Streamer.stream_with_slice(4, &Enum.count/1, index: "posts")
       |> Enum.sum()
 
   The result is a stream of whatever `stream_fn` returned, one per slice, so
@@ -153,7 +153,7 @@ defmodule Dowser.Elasticsearch.Streamer do
   anything else the split needs travels with it; `id` and `max` are computed
   here and win:
 
-      stream_with_slice(%{query: ..., slice: %{field: "_id"}}, &f/1, 7, index: "posts")
+      stream_with_slice(%{query: ..., slice: %{field: "_id"}}, 7, &f/1, index: "posts")
       # each walk carries %{"field" => "_id", "id" => 0..6, "max" => 7}
 
   All slices share one point in time, opened here and closed when the stream
@@ -176,10 +176,10 @@ defmodule Dowser.Elasticsearch.Streamer do
   A slice that fails raises: an exception from its own walk, or a
   `RuntimeError` naming the slice if the task exited or timed out.
   """
-  @spec stream_with_slice(query(), (Enumerable.t() -> term()), pos_integer(), keyword()) ::
+  @spec stream_with_slice(query(), pos_integer(), (Enumerable.t() -> term()), keyword()) ::
           Enumerable.t()
-  def stream_with_slice(%{} = query, stream_fn, slice_nbr, opts \\ [])
-      when is_function(stream_fn, 1) and is_integer(slice_nbr) and slice_nbr > 0 do
+  def stream_with_slice(%{} = query, slice_nbr, stream_fn, opts \\ [])
+      when is_integer(slice_nbr) and slice_nbr > 0 and is_function(stream_fn, 1) do
     {index, opts} = Keyword.pop(opts, :index)
     {pit_id, opts} = Keyword.pop(opts, :pit)
     {keep_alive, opts} = Keyword.pop(opts, :keep_alive, @default_keep_alive)

@@ -284,7 +284,7 @@ defmodule Dowser.Elasticsearch.StreamerTest do
 
       results =
         %{query: %{}, size: 5}
-        |> Streamer.stream_with_slice(&Enum.count/1, 3, index: "posts", context: context)
+        |> Streamer.stream_with_slice(3, &Enum.count/1, index: "posts", context: context)
         |> Enum.to_list()
 
       assert Enum.sum(results) == 3
@@ -305,11 +305,11 @@ defmodule Dowser.Elasticsearch.StreamerTest do
       pids =
         %{query: %{}, size: 5}
         |> Streamer.stream_with_slice(
+          2,
           fn slice ->
             Enum.to_list(slice)
             self()
           end,
-          2,
           index: "posts",
           context: context
         )
@@ -324,7 +324,7 @@ defmodule Dowser.Elasticsearch.StreamerTest do
       context = pool(requests, %{0 => [[]], 1 => [[]]})
 
       %{query: %{}, slice: %{"field" => "_id"}}
-      |> Streamer.stream_with_slice(&Stream.run/1, 2, index: "posts", context: context)
+      |> Streamer.stream_with_slice(2, &Stream.run/1, index: "posts", context: context)
       |> Stream.run()
 
       assert searches(requests) |> Enum.map(& &1.body["slice"]) |> Enum.sort_by(& &1["id"]) == [
@@ -338,7 +338,7 @@ defmodule Dowser.Elasticsearch.StreamerTest do
 
       ids =
         %{query: %{}, size: 1}
-        |> Streamer.stream_with_slice(&Enum.map(&1, fn hit -> hit["_id"] end), 2,
+        |> Streamer.stream_with_slice(2, &Enum.map(&1, fn hit -> hit["_id"] end),
           index: "posts",
           context: context
         )
@@ -356,7 +356,7 @@ defmodule Dowser.Elasticsearch.StreamerTest do
       context = pool(requests, %{0 => [[]], 1 => [[]], 2 => [[]], 3 => [[]]})
 
       %{query: %{}}
-      |> Streamer.stream_with_slice(&Stream.run/1, 4, index: "posts", context: context)
+      |> Streamer.stream_with_slice(4, &Stream.run/1, index: "posts", context: context)
       |> Stream.run()
 
       all = requests |> Agent.get(& &1) |> Enum.reverse()
@@ -373,7 +373,7 @@ defmodule Dowser.Elasticsearch.StreamerTest do
       context = pool(requests, %{0 => [[]], 1 => [[]]})
 
       %{query: %{}}
-      |> Streamer.stream_with_slice(&Stream.run/1, 2, index: "posts", context: context)
+      |> Streamer.stream_with_slice(2, &Stream.run/1, index: "posts", context: context)
       |> Stream.run()
 
       refute Enum.any?(searches(requests), &match?(%{"query" => %{"match_none" => _}}, &1.body))
@@ -384,7 +384,7 @@ defmodule Dowser.Elasticsearch.StreamerTest do
 
       assert_raise RuntimeError, ~r/boom/, fn ->
         %{query: %{}}
-        |> Streamer.stream_with_slice(fn _slice -> raise "boom" end, 2,
+        |> Streamer.stream_with_slice(2, fn _slice -> raise "boom" end,
           index: "posts",
           context: context
         )
@@ -397,7 +397,7 @@ defmodule Dowser.Elasticsearch.StreamerTest do
     test "nothing is requested until the result is enumerated", %{requests: requests} do
       context = pool(requests, %{0 => [[]]})
 
-      Streamer.stream_with_slice(%{query: %{}}, &Stream.run/1, 1,
+      Streamer.stream_with_slice(%{query: %{}}, 1, &Stream.run/1,
         index: "posts",
         context: context
       )
