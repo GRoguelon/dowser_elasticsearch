@@ -91,6 +91,12 @@ defmodule Dowser.Elasticsearch.Streamer do
 
   ## Failure
 
+  There is no `stream!/2`. Every other function in this package comes in a pair
+  because it returns `{:ok, result}` or `{:error, error}` and the bang variant
+  unwraps it; a stream has nothing to unwrap, and nothing has happened yet when
+  it is built. Errors surface on enumeration, by raising — which is what the
+  bang variant would have done anyway.
+
   The stream raises on the first failed request, and closes a point in time it
   opened on the way out — on normal completion, on `Enum.take/2`, and on an
   exception. It cannot close one if the enumerating process is killed outright;
