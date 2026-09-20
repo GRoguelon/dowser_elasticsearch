@@ -14,6 +14,11 @@ what changed, the guide says what to do about it.
 
 ### Added
 
+- `Dowser.Elasticsearch.Streamer` — walks a search as a `Stream`, over a point
+  in time and `search_after`, with `_shard_doc` appended to the sort as the
+  tiebreaker that makes the paging deterministic. `:slice` splits the walk and
+  runs the slices concurrently, sharing one point in time; a map instead of a
+  count gives one slice, for fanning out across nodes.
 - A `:codec` option on every API function, choosing the field codec
   `Dowser.Elasticsearch.Codec` dispatches `load/2`/`dump/2` through for one
   request. It resolves most-specific-first: request, then context (alongside

@@ -107,6 +107,32 @@ defmodule Dowser.Elasticsearch.Client do
   end
 
   @doc """
+  The response second pass in play, as `{key_fun, decoder}` — both resolved the
+  way `Dowser.Client.Request` resolves them, either being `nil` when unset.
+
+  `Dowser.Elasticsearch.Streamer` needs it in hand: its own requests have to
+  come back raw, because it reads `hits.hits[]`, each hit's `sort` and the
+  `pit_id` by their string keys, so it applies the pass itself to the hits it
+  yields. Feed the pair to `Dowser.Client.Decoder.run/3`.
+  """
+  @spec resolve_decoder(keyword()) ::
+          {Dowser.Client.Decoder.key_fun() | nil, Dowser.Client.Decoder.resolved() | nil}
+  def resolve_decoder(opts) do
+    {:ok, key_fun} = opts |> fetch_option(:keys) |> Dowser.Client.Decoder.key_fun()
+
+    decoder =
+      with decoder when not is_nil(decoder) <- fetch_option(opts, :decoder),
+           {:ok, {fun, decoder_opts}} <- Dowser.Client.Decoder.decoder(decoder),
+           {:ok, context} <- Context.resolve(Keyword.get(opts, :context)) do
+        {fun, Keyword.put(decoder_opts, :context, context)}
+      else
+        _other -> nil
+      end
+
+    {key_fun, decoder}
+  end
+
+  @doc """
   The encoder in play as `{function, opts}` — its own options plus the resolved
   `:context` — or `nil` when none is configured.
 

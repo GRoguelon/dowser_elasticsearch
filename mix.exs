@@ -57,6 +57,7 @@ defmodule DowserElasticsearch.MixProject do
       groups_for_modules: [
         API: [
           Dowser.Elasticsearch.Document,
+          Dowser.Elasticsearch.Streamer,
           Dowser.Elasticsearch.Index,
           Dowser.Elasticsearch.Search,
           Dowser.Elasticsearch.Repository
