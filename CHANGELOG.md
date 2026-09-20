@@ -5,6 +5,115 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2026-09-19
+
+Tracks [`dowser_client` 0.2.0](https://hexdocs.pm/dowser_client/UPGRADE_GUIDE_0_2.html),
+which drops every optional dependency and every pluggable adapter. **See
+[UPGRADE_0_2.md](UPGRADE_0_2.md) for the migration path** — this entry says
+what changed, the guide says what to do about it.
+
+### Added
+
+- `Dowser.Elasticsearch.Decoder` and `Dowser.Elasticsearch.Encoder` — the two
+  whole-body casting passes, wired onto a context as `dowser_client`'s
+  `:decoder` and `:encoder`. The decoder finds documents anywhere in a
+  response envelope and casts each against the mapping of its own `_index`;
+  the encoder casts a document source in a request body against the mapping of
+  the index it is going to.
+- A `:codec` option on every API function, choosing the per-field codec for one
+  request. It resolves most-specific-first: request, then context (alongside
+  the decoder/encoder it belongs to), then
+  `config :dowser_elasticsearch, codec: ...`, then
+  `Dowser.Elasticsearch.Codec`.
+- `Dowser.Elasticsearch.MappingCacher.fetch/2`, a `get/2` returning the mapping
+  or `nil` rather than a result tuple, and `key/2`, an entry's cache key.
+- `Dowser.Elasticsearch.Encoder.encode_bulk/3`, which casts a bulk operation
+  list against the index named on each action line.
+
+### Changed
+
+- **The whole-body casting is split in two**, mirroring `dowser_client`'s split
+  of `:codec_adapter` into a `:decoder` and an `:encoder`:
+
+  ```diff
+    config :dowser_client,
+  -   configs: [
+  +   contexts: [
+        default: [
+          endpoint: "http://localhost:9200",
+  -       codec_adapter: Dowser.Elasticsearch.Codec
+  +       decoder: Dowser.Elasticsearch.Decoder,
+  +       encoder: Dowser.Elasticsearch.Encoder
+        ]
+      ]
+  ```
+
+  Casting stays opt-in: with neither configured, bodies are left exactly as
+  JSON produced them and no mapping is ever fetched.
+- **A query is never cast.** `dowser_client` only ever hands an encoder a
+  document source, because a query value has no mapping entry to anchor it.
+  Casting an old codec did on query values has to move into how the query is
+  built.
+- **`Dowser.Elasticsearch.Codec` is now the per-field codec** both passes
+  dispatch into, one value at a time — the role `Dowser.Client.Field` and
+  `Dowser.Client.Codec.Builder` used to share, and which `dowser_client` no
+  longer ships. It is a plain module: a `%{type => module}` table, `decode/2`
+  and `encode/2`, and the behaviour each entry in that table implements.
+  Covering one more mapping type is a clause per direction and a delegation
+  for the rest; delegating last inherits the built-in casts, the `nil`
+  short-circuit and the fall-through to identity, and a clause matching a
+  built-in type replaces that cast.
+- **A custom codec no longer means rewriting the envelope walker.** In 0.1.1 a
+  `Codec.Builder` module only got `load/2`/`dump/2`, so it could not be used on
+  its own. Now the walking stays in `Decoder`/`Encoder` and only the per-field
+  dispatch changes.
+- **`Dowser.Elasticsearch.Fields.*` are now `Dowser.Elasticsearch.Codec.*`**,
+  and their `load/2`/`dump/2` are `decode/2`/`encode/2` — the same names the
+  two passes use, in the same direction:
+
+  ```diff
+  - Dowser.Elasticsearch.Fields.Date.load(value, field)
+  + Dowser.Elasticsearch.Codec.Date.decode(value, field)
+  ```
+
+- Every API function's `:config` option is now `:context` — `dowser_client`
+  rejects a request still carrying `:config` rather than silently sending it to
+  the default cluster.
+- `Dowser.Elasticsearch.Document.update/4` now casts an `upsert` source as well
+  as a `doc` one, in either key style. A `%{script: ...}` body is still left
+  alone.
+- `Dowser.Elasticsearch.MappingCacher`'s `:fetch` and `:eager` options take a
+  `Dowser.Client.Context` (or anything `Dowser.Client.Context.resolve/1`
+  accepts) in place of a config.
+
+### Fixed
+
+- `Dowser.Elasticsearch.MappingCacher` keyed entries by endpoint alone, so two
+  contexts pointing at the same cluster with **different credentials** shared
+  one cached mapping — whichever fetched first won, and the other was cast
+  against a mapping it may not have been allowed to see (field-level security
+  hides fields; an alias can resolve to a different concrete index). Entries
+  are now keyed by `{endpoint, scope, index}`, where the scope is a truncated
+  SHA-256 of the context's `:auth` and `:http_opts`. The credentials are hashed
+  rather than stored: a cache key sits in an ETS table any process can read,
+  and `Dowser.Client.Context` redacts `:auth` even from its own `Inspect`. A
+  context with neither scopes to `nil`, so the unauthenticated key stays
+  readable.
+
+### Removed
+
+- The `req`, `hackney`, `jason` and `poison` optional dependencies, and the
+  `:http_adapter`/`:json_adapter` configuration that selected between them.
+  HTTP is OTP's `:httpc` and JSON is Elixir's `JSON`. A struct sent in a
+  request body needs `@derive JSON.Encoder` where it used to need
+  `@derive Jason.Encoder`.
+- The `cast/2` macro, along with `use Dowser.Client.Codec.Builder` and
+  `@behaviour Dowser.Client.Field`. A codec is now plain function clauses, so
+  the `cast: 2` formatter entry goes too — drop `import_deps: [:dowser_client]`
+  from `.formatter.exs` if it was only there for that.
+- `:codec_opts`. Whatever a decoder or encoder needs travels with it, as
+  `{Dowser.Elasticsearch.Decoder, index: "articles"}`.
+
 ## [0.1.1] - 2026-08-17
 
 ### Added
