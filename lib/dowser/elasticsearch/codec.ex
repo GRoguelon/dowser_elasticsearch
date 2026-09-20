@@ -189,7 +189,8 @@ defmodule Dowser.Elasticsearch.Codec do
   def decode(body, opts) do
     key_fn = Keyword.fetch!(opts, :key_fn)
     context = Keyword.get(opts, :context)
-    load = load_fun(opts)
+    codec = codec(opts)
+    load = &codec.load/2
 
     if Keyword.get(opts, :source, false) do
       mapping = MappingCacher.fetch(context, Keyword.get(opts, :index))
@@ -209,9 +210,10 @@ defmodule Dowser.Elasticsearch.Codec do
   """
   @spec encode(term(), keyword()) :: term()
   def encode(source, opts) do
+    codec = codec(opts)
     mapping = MappingCacher.fetch(Keyword.get(opts, :context), Keyword.get(opts, :index))
 
-    Mappable.encode(source, mapping, dump_fun(opts), false)
+    Mappable.encode(source, mapping, &codec.dump/2, false)
   end
 
   @doc """
@@ -289,9 +291,6 @@ defmodule Dowser.Elasticsearch.Codec do
   def dump(value, _field), do: value
 
   ## Private functions — the field codec
-
-  defp load_fun(opts), do: &codec(opts).load/2
-  defp dump_fun(opts), do: &codec(opts).dump/2
 
   defp codec(opts) do
     Keyword.get(opts, :codec) || Application.get_env(:dowser_elasticsearch, :codec, __MODULE__)
