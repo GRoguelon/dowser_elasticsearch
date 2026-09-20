@@ -24,8 +24,10 @@ defmodule Dowser.Elasticsearch.Index do
       (`404` → `false`) and raises on genuine errors.
 
   All remaining options are forwarded to `Dowser.Client.request/4`, e.g.
-  `:config`, `:params` (query-string parameters), `:format`, `:http_adapter`,
-  `:json_adapter` and `:http_opts` (including `:headers`).
+  `:context`, `:params` (query-string parameters), `:format`, `:keys` and
+  `:http_opts` (including `:headers`) — plus `:codec`, this package's own,
+  which picks the per-field codec for this one request (see
+  `Dowser.Elasticsearch.Codec`).
 
   On a 2xx response every function returns `{:ok, body}` with the decoded
   response body. A non-2xx response returns
@@ -34,7 +36,7 @@ defmodule Dowser.Elasticsearch.Index do
   a bang variant that returns the body directly or raises the error exception.
   """
 
-  alias Dowser.Client
+  alias Dowser.Elasticsearch.Client
   alias Dowser.Elasticsearch.Helpers
 
   ## Typespecs

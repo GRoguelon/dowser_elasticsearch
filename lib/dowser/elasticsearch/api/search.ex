@@ -21,11 +21,15 @@ defmodule Dowser.Elasticsearch.Search do
       request uses `POST` whenever a body is present and `GET` otherwise.
 
   All remaining options are forwarded to `Dowser.Client.request/4`, e.g.
-  `:config`, `:params` (query-string parameters), `:format`, `:http_adapter`,
-  `:json_adapter` and `:http_opts` (including `:headers`).
+  `:context`, `:params` (query-string parameters), `:format`, `:keys` and
+  `:http_opts` (including `:headers`) — plus `:codec`, this package's own,
+  which picks the per-field codec for this one request (see
+  `Dowser.Elasticsearch.Codec`).
 
-  Values are cast automatically wherever `:codec_adapter` is set to
-  `Dowser.Elasticsearch.Codec` — no per-call option needed.
+  Response values are cast automatically wherever
+  `Dowser.Elasticsearch.Decoder` is configured as `:decoder` — no per-call
+  option needed. A query is never cast: build it in the shape Elasticsearch
+  expects.
 
   On a 2xx response every function returns `{:ok, body}` with the decoded
   response body. A non-2xx response returns
@@ -34,7 +38,7 @@ defmodule Dowser.Elasticsearch.Search do
   a bang variant that returns the body directly or raises the error exception.
   """
 
-  alias Dowser.Client
+  alias Dowser.Elasticsearch.Client
   alias Dowser.Elasticsearch.Helpers
   alias Dowser.Elasticsearch.Index
 
@@ -59,9 +63,9 @@ defmodule Dowser.Elasticsearch.Search do
       %{query: %{match: %{title: "hello"}}}
       |> Dowser.Elasticsearch.Search.search(index: "posts")
 
-  Every key in the response is cast per `:keys`. Wherever `:type_codec` is
-  configured (see `Dowser.Elasticsearch.Codec`), each hit's `_source` is
-  additionally cast against its own index mapping (dates become `DateTime`,
+  Every key in the response is cast per `:keys`. Wherever
+  `Dowser.Elasticsearch.Decoder` is configured as `:decoder`, each hit's
+  `_source` is additionally cast against its own index mapping (dates become `DateTime`,
   IPs become `:inet` tuples, and so on) — automatically, at any nesting
   depth, so `msearch/2`, `search_template/2`, `scroll/2` and the rest get the
   same treatment with no extra options.
