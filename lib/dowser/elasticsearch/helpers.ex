@@ -93,16 +93,4 @@ defmodule Dowser.Elasticsearch.Helpers do
     params = opts |> Keyword.get(:params, []) |> Enum.to_list()
     Keyword.put(opts, :params, params ++ [{key, value}])
   end
-
-  @doc """
-  Merges `extra` into `opts[:codec_opts]` — supplying the context
-  `Dowser.Elasticsearch.Codec` needs (e.g. `:index`) for an endpoint's
-  request/response shape, without overwriting any key the caller already set
-  there themselves.
-  """
-  @spec put_codec_opts(keyword(), keyword()) :: keyword()
-  def put_codec_opts(opts, extra) do
-    existing = Keyword.get(opts, :codec_opts, [])
-    Keyword.put(opts, :codec_opts, Keyword.merge(extra, existing))
-  end
 end
