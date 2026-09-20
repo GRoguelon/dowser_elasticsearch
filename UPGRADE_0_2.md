@@ -18,11 +18,15 @@ cannot help you with.
 | `codec_adapter: Dowser.Elasticsearch.Codec` | `decoder:` **and** `encoder:`, both `Dowser.Elasticsearch.Codec` |
 | `Dowser.Elasticsearch.Fields.Date` | `Dowser.Elasticsearch.Codec.Date` |
 | `@behaviour Dowser.Client.Field` | `@behaviour Dowser.Elasticsearch.Codec` |
-| `use Dowser.Client.Codec.Builder` + `cast/2` | plain `decode/2`/`encode/2` clauses |
+| `use Dowser.Client.Codec.Builder` + `cast/2` | plain `load/2` and `dump/2` clauses |
 | `codec_opts: [...]` | `{Codec, ...}`, or the `:codec` option |
 | `config: ...` | `context: ...` |
 | `configs: [...]` | `contexts: [...]` |
 | `import_deps: [:dowser_client]` (for `cast: 2`) | nothing — there is no macro left |
+
+Note what is *not* in that table: `decode/2`, `encode/2`, `load/2` and `dump/2`
+all keep the meanings they had in 0.1.1 — a whole body for the first pair, one
+value and its mapping entry for the second. Only where they live changed.
 
 ## 1. Dependencies
 
@@ -61,7 +65,7 @@ A request still carrying `:config` is rejected with a `Dowser.Client.Error`
 rather than quietly going to the default cluster, so the compiler won't find
 these but the first test run will.
 
-## 3. One adapter becomes two passes
+## 3. One adapter, two options
 
 `dowser_client` splits `:codec_adapter` — which cast a whole body in both
 directions — into a `:decoder` and an `:encoder`, because reading and writing
@@ -84,11 +88,11 @@ That is the whole of it. `decode/2` and `encode/2` still take a whole body,
 `load/2` and `dump/2` still take one value, and the four keep the meanings they
 had in 0.1.1.
 
-Casting is still opt-in and still needs no per-call option: every function in
-`Document` and `Search` names the index its documents belong to, and the
-writing ones also say where in the request body a document source sits. With
-neither configured, bodies stay exactly as JSON produced them and no mapping is
-ever fetched.
+Casting is still opt-in and still needs no per-call option: a response carries
+each document's own `_index`, so reads need telling nothing, and the writing
+functions name the index each source is going to and where in the body it sits.
+With neither configured, bodies stay exactly as JSON produced them and no
+mapping is ever fetched.
 
 Two behaviours changed with the split, both because `dowser_client` now only
 ever hands an encoder a **document source**:
@@ -243,8 +247,8 @@ is the first thing to check.
       `decoder:` **and** `encoder:`, both `Dowser.Elasticsearch.Codec`.
 - [ ] `Dowser.Elasticsearch.Fields.X` → `Dowser.Elasticsearch.Codec.X`
       (`load/2` and `dump/2` are unchanged).
-- [ ] Rewrite any `use Dowser.Client.Codec.Builder` module as `decode/2` and
-      `encode/2` clauses delegating to `Dowser.Elasticsearch.Codec`, and point
+- [ ] Rewrite any `use Dowser.Client.Codec.Builder` module as `load/2` and
+      `dump/2` clauses delegating to `Dowser.Elasticsearch.Codec`, and point
       the casting at it with `:codec`.
 - [ ] Drop `cast: 2` and `import_deps: [:dowser_client]` from
       `.formatter.exs`.

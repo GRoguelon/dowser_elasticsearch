@@ -28,9 +28,10 @@ defmodule Dowser.Elasticsearch.Document do
   `Dowser.Elasticsearch.Codec`).
 
   Values are cast automatically wherever `Dowser.Elasticsearch.Codec` is
-  configured as `:decoder`/`:encoder` — no per-call option needed. Each function names the index its documents belong
-  to and where in the request body a document source sits, so the encoder has
-  the mapping it needs.
+  configured as `:decoder`/`:encoder` — no per-call option needed. A response
+  carries each document's own `_index`, so reads need telling nothing; the
+  writing functions name the index each source is going to and where in the
+  request body it sits, which is the mapping the encoder needs.
 
   On a 2xx response every function returns `{:ok, body}` with the decoded
   response body. A non-2xx response returns
