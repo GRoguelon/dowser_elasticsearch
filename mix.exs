@@ -2,7 +2,7 @@ defmodule DowserElasticsearch.MixProject do
   use Mix.Project
 
   @source_url "https://github.com/GRoguelon/dowser_elasticsearch"
-  @version "0.1.1"
+  @version "0.2.0"
 
   def project do
     [
@@ -23,7 +23,7 @@ defmodule DowserElasticsearch.MixProject do
   # Run "mix help compile.app" to learn about applications.
   def application do
     [
-      extra_applications: [:logger],
+      extra_applications: [:crypto, :logger],
       mod: {Dowser.Elasticsearch.Application, []}
     ]
   end
@@ -34,12 +34,13 @@ defmodule DowserElasticsearch.MixProject do
   defp package do
     [
       name: :dowser_elasticsearch,
-      files: ~w[lib .formatter.exs mix.exs README* CHANGELOG* LICENSE*],
+      files: ~w[lib .formatter.exs mix.exs README* CHANGELOG* UPGRADE* LICENSE*],
       maintainers: ["Geoffrey Roguelon"],
       licenses: ["MIT"],
       links: %{
         "GitHub" => @source_url,
         "Changelog" => "https://dowser-elasticsearch.hexdocs.pm/changelog.html",
+        "Upgrade guide" => "https://dowser-elasticsearch.hexdocs.pm/upgrade_0_2.html",
         "Dowser.Client" => "https://hex.pm/packages/dowser_client"
       }
     ]
@@ -49,10 +50,10 @@ defmodule DowserElasticsearch.MixProject do
     [
       formatters: ["html"],
       main: "readme",
-      extras: ["README.md", "CHANGELOG.md"],
+      extras: ["README.md", "UPGRADE_0_2.md", "CHANGELOG.md"],
       source_ref: "v#{@version}",
       source_url: @source_url,
-      skip_undefined_reference_warnings_on: ["CHANGELOG.md"],
+      skip_undefined_reference_warnings_on: ["CHANGELOG.md", "UPGRADE_0_2.md"],
       groups_for_modules: [
         API: [
           Dowser.Elasticsearch.Document,
@@ -61,15 +62,16 @@ defmodule DowserElasticsearch.MixProject do
           Dowser.Elasticsearch.Repository
         ],
         "Type casting": [
-          Dowser.Elasticsearch.Codec,
-          Dowser.Elasticsearch.Mappable,
+          Dowser.Elasticsearch.Decoder,
+          Dowser.Elasticsearch.Encoder,
           Dowser.Elasticsearch.MappingCacher,
-          Dowser.Elasticsearch.Fields.Binary,
-          Dowser.Elasticsearch.Fields.Date,
-          Dowser.Elasticsearch.Fields.DateRange,
-          Dowser.Elasticsearch.Fields.GeoPoint,
-          Dowser.Elasticsearch.Fields.IP,
-          Dowser.Elasticsearch.Fields.Range
+          Dowser.Elasticsearch.Codec,
+          Dowser.Elasticsearch.Codec.Binary,
+          Dowser.Elasticsearch.Codec.Date,
+          Dowser.Elasticsearch.Codec.DateRange,
+          Dowser.Elasticsearch.Codec.GeoPoint,
+          Dowser.Elasticsearch.Codec.IP,
+          Dowser.Elasticsearch.Codec.Range
         ]
       ]
     ]
@@ -78,11 +80,9 @@ defmodule DowserElasticsearch.MixProject do
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
-      {:dowser_client, "~> 0.1.1"},
-      {:req, "~> 0.7", optional: true},
-      {:hackney, "~> 4.6", optional: true},
-      {:jason, "~> 1.4", optional: true},
-      {:poison, "~> 6.0", optional: true},
+      # {:dowser_client, "~> 0.2.0"},
+      # DO NOT COMMIT use previous line
+      {:dowser_client, github: "GRoguelon/dowser_client", branch: "feat/httpc"},
 
       ## Dev
       {:ex_doc, "~> 0.34", only: :dev, runtime: false, warn_if_outdated: true},
