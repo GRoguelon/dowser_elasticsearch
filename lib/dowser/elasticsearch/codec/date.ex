@@ -14,13 +14,18 @@ defmodule Dowser.Elasticsearch.Codec.Date do
 
   ## Module attributes
 
-  @date_formats ~w[strict_date strict_year_month_day yyyy-MM-dd strict_date_optional_time strict_date_optional_time_nanos]
+  @date_formats ~w[strict_date strict_year_month_day yyyy-MM-dd]
 
   @date_time_second_formats ~w[strict_date_time_no_millis yyyy-MM-dd'T'HH:mm:ssZ]
 
-  @date_time_millisecond_formats ~w[strict_date_optional_time strict_date_time yyyy-MM-dd'T'HH:mm:ss.SSSZ]
+  @date_time_millisecond_formats ~w[strict_date_time yyyy-MM-dd'T'HH:mm:ss.SSSZ]
 
-  @date_time_microsecond_formats ~w[strict_date_optional_time_nanos yyyy-MM-dd'T'HH:mm:ss.SSSSSSZ]
+  @date_time_microsecond_formats ~w[yyyy-MM-dd'T'HH:mm:ss.SSSSSSZ]
+
+  # Everything in these two is optional but the date: the time, its fraction —
+  # of any length — and the offset. Enumerating the shapes is what made the
+  # fraction mandatory in practice, so they are parsed rather than matched.
+  @date_optional_time_formats ~w[strict_date_optional_time strict_date_optional_time_nanos]
 
   @default_format ~w[strict_date_optional_time epoch_millis]
 
@@ -139,6 +144,38 @@ defmodule Dowser.Elasticsearch.Codec.Date do
     end
   end
 
+  for format <- @date_optional_time_formats do
+    defp do_load(
+           <<_::binary-size(4), "-", _::binary-size(2), "-", _::binary-size(2)>> = value,
+           unquote(format)
+         ) do
+      case Date.from_iso8601(value) do
+        {:ok, date} ->
+          date
+
+        _ ->
+          nil
+      end
+    end
+
+    defp do_load(value, unquote(format)) when is_binary(value) do
+      case DateTime.from_iso8601(value) do
+        {:ok, date_time, _offset} ->
+          date_time
+
+        # Elasticsearch reads a time with no offset as UTC.
+        {:error, :missing_offset} ->
+          case NaiveDateTime.from_iso8601(value) do
+            {:ok, naive} -> DateTime.from_naive!(naive, "Etc/UTC")
+            _ -> nil
+          end
+
+        _ ->
+          nil
+      end
+    end
+  end
+
   defp do_load(_value, _format), do: nil
 
   defp do_dump(%NaiveDateTime{} = naive_date_time, format) do
@@ -177,6 +214,20 @@ defmodule Dowser.Elasticsearch.Codec.Date do
     defp do_dump(%DateTime{} = date_time, unquote(format)) do
       date_time |> DateTime.truncate(:microsecond) |> DateTime.to_iso8601()
     end
+  end
+
+  for format <- @date_optional_time_formats do
+    defp do_dump(%Date{} = date, unquote(format)) do
+      Date.to_iso8601(date)
+    end
+  end
+
+  defp do_dump(%DateTime{} = date_time, "strict_date_optional_time") do
+    date_time |> DateTime.truncate(:millisecond) |> DateTime.to_iso8601()
+  end
+
+  defp do_dump(%DateTime{} = date_time, "strict_date_optional_time_nanos") do
+    date_time |> DateTime.truncate(:microsecond) |> DateTime.to_iso8601()
   end
 
   defp do_dump(value, _format), do: value

@@ -108,6 +108,16 @@ what changed, the guide says what to do about it.
 
 ### Fixed
 
+- **`strict_date_optional_time` made the fraction mandatory.** It is
+  Elasticsearch's default `date` format, and everything after the date in it
+  is optional — the time, its fractional second, the offset. It was listed
+  among the date-only and the millisecond formats but not the second-
+  precision ones, so a document written `2026-09-20T17:39:09Z` was matched by
+  no clause and came back as the string it arrived as. The two optional-time
+  formats are now parsed rather than shape-matched, which also picks up
+  offsets (`+01:00`, normalized to UTC), a time with no offset at all (read
+  as UTC, as Elasticsearch reads it) and fractions of any length. An
+  unparseable value still passes through untouched.
 - A **range held in an array was never cast**. `date_range` and
   `integer_range` were handled only where the range is a direct child of an
   object; Elasticsearch lets any field hold an array, and a range reached

@@ -36,6 +36,29 @@ defmodule Dowser.Elasticsearch.CodecTest do
              }) == ~U[2026-08-11 00:00:00.000Z]
     end
 
+    test "strict_date_optional_time casts every part it makes optional" do
+      field = %{"type" => "date"}
+
+      # The default format, with the fraction Elasticsearch treats as optional
+      # actually optional — and the offset, and the time itself.
+      assert Codec.load("2026-09-20T17:39:09.644Z", field) == ~U[2026-09-20 17:39:09.644Z]
+      assert Codec.load("2026-09-20T17:39:09Z", field) == ~U[2026-09-20 17:39:09Z]
+
+      assert Codec.load("2026-09-20T17:39:09.123456789Z", field) ==
+               ~U[2026-09-20 17:39:09.123456Z]
+
+      assert Codec.load("2026-09-20", field) == ~D[2026-09-20]
+
+      # An offset is normalized to UTC; no offset at all is read as UTC.
+      assert Codec.load("2026-09-20T12:39:09-05:00", field) == ~U[2026-09-20 17:39:09Z]
+      assert Codec.load("2026-09-20T17:39:09", field) == ~U[2026-09-20 17:39:09Z]
+    end
+
+    test "an unparseable date still passes through untouched" do
+      assert Codec.load("not a date", %{"type" => "date"}) == "not a date"
+      assert Codec.load("2026-13-45T99:99:99Z", %{"type" => "date"}) == "2026-13-45T99:99:99Z"
+    end
+
     test "casts ip strings to :inet tuples" do
       assert Codec.load("127.0.0.1", %{"type" => "ip"}) == {127, 0, 0, 1}
     end
