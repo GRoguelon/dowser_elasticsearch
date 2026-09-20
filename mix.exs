@@ -62,10 +62,8 @@ defmodule DowserElasticsearch.MixProject do
           Dowser.Elasticsearch.Repository
         ],
         "Type casting": [
-          Dowser.Elasticsearch.Decoder,
-          Dowser.Elasticsearch.Encoder,
-          Dowser.Elasticsearch.MappingCacher,
           Dowser.Elasticsearch.Codec,
+          Dowser.Elasticsearch.MappingCacher,
           Dowser.Elasticsearch.Codec.Binary,
           Dowser.Elasticsearch.Codec.Date,
           Dowser.Elasticsearch.Codec.DateRange,

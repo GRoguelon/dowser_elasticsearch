@@ -27,7 +27,7 @@ defmodule Dowser.Elasticsearch.Search do
   `Dowser.Elasticsearch.Codec`).
 
   Response values are cast automatically wherever
-  `Dowser.Elasticsearch.Decoder` is configured as `:decoder` — no per-call
+  `Dowser.Elasticsearch.Codec` is configured as `:decoder` — no per-call
   option needed. A query is never cast: build it in the shape Elasticsearch
   expects.
 
@@ -64,7 +64,7 @@ defmodule Dowser.Elasticsearch.Search do
       |> Dowser.Elasticsearch.Search.search(index: "posts")
 
   Every key in the response is cast per `:keys`. Wherever
-  `Dowser.Elasticsearch.Decoder` is configured as `:decoder`, each hit's
+  `Dowser.Elasticsearch.Codec` is configured as `:decoder`, each hit's
   `_source` is additionally cast against its own index mapping (dates become `DateTime`,
   IPs become `:inet` tuples, and so on) — automatically, at any nesting
   depth, so `msearch/2`, `search_template/2`, `scroll/2` and the rest get the

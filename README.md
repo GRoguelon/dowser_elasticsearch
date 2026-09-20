@@ -17,10 +17,9 @@ the endpoint itself — instead of a hand-rolled query builder.
   the index-related functions of `Search`, `Document`, and `Index` to a
   fixed or computed index, so your code stops repeating `index: "posts"` on
   every call.
-- **Optional automatic type casting.** `Dowser.Elasticsearch.Decoder` and
-  `Dowser.Elasticsearch.Encoder` cast dates, IPs, and other Elasticsearch
-  types to and from native Elixir terms, per index mapping, with no per-call
-  option needed.
+- **Optional automatic type casting.** `Dowser.Elasticsearch.Codec` casts
+  dates, IPs, and other Elasticsearch types to and from native Elixir terms,
+  per index mapping, with no per-call option needed.
 - **No dependencies to pick.** Transport is handled by `dowser_client`, over
   OTP's `:httpc` and Elixir's built-in `JSON` module — nothing to add, nothing
   to configure.
@@ -174,18 +173,17 @@ directly.
 ## Type casting
 
 By default, response bodies come back as plain decoded JSON — dates, IPs and
-other Elasticsearch types stay strings. Wiring
-`Dowser.Elasticsearch.Decoder` and `Dowser.Elasticsearch.Encoder` into the
-context casts them automatically, per index mapping, on every call to
-`Search` and `Document`:
+other Elasticsearch types stay strings. Wiring `Dowser.Elasticsearch.Codec`
+into the context — as both passes — casts them automatically, per index
+mapping, on every call to `Search` and `Document`:
 
 ```elixir
 config :dowser_client,
   contexts: [
     default: [
       endpoint: "http://localhost:9200",
-      decoder: Dowser.Elasticsearch.Decoder,
-      encoder: Dowser.Elasticsearch.Encoder
+      decoder: Dowser.Elasticsearch.Codec,
+      encoder: Dowser.Elasticsearch.Codec
     ]
   ]
 ```
@@ -198,37 +196,38 @@ Document.index!(%{published_at: ~U[2026-08-11 00:00:00Z]}, "posts")
 # POST /posts/_doc {"published_at":"2026-08-11T00:00:00Z"}
 ```
 
-The decoder finds documents anywhere in a response envelope and casts each
-one against the mapping of its own `_index`. The encoder is the mirror image,
-but only ever runs on a *document source* — the functions in `Document` name
-the index each source is going to and where in the request body it sits. A
-query is never cast, since a query value has no mapping entry to anchor it:
-build queries in the shape Elasticsearch expects.
+`decode/2` finds documents anywhere in a response envelope and casts each one
+against the mapping of its own `_index`. `encode/2` is the mirror image, but
+only ever runs on a *document source* — the functions in `Document` name the
+index each source is going to and where in the request body it sits. A query
+is never cast, since a query value has no mapping entry to anchor it: build
+queries in the shape Elasticsearch expects.
 
 Mappings are fetched once and cached by `Dowser.Elasticsearch.MappingCacher`,
 which the application supervises automatically. `date`, `date_range`, `ip`,
 `binary`, `geo_point` and `integer_range` fields are cast out of the box.
 
-Each value is cast by `Dowser.Elasticsearch.Codec`. Covering one more mapping
-type is a clause per direction and a delegation back to it for the rest:
+Individual values go through the same module's `load/2` and `dump/2`. Covering
+one more mapping type is a clause per direction and a delegation back to it for
+the rest:
 
 ```elixir
 defmodule MyApp.Codec do
   @behaviour Dowser.Elasticsearch.Codec
 
   @impl true
-  def decode(value, %{"type" => "scaled_float", "scaling_factor" => factor}) do
+  def load(value, %{"type" => "scaled_float", "scaling_factor" => factor}) do
     value / factor
   end
 
-  def decode(value, field), do: Dowser.Elasticsearch.Codec.decode(value, field)
+  def load(value, field), do: Dowser.Elasticsearch.Codec.load(value, field)
 
   @impl true
-  def encode(value, %{"type" => "scaled_float", "scaling_factor" => factor}) do
+  def dump(value, %{"type" => "scaled_float", "scaling_factor" => factor}) do
     round(value * factor)
   end
 
-  def encode(value, field), do: Dowser.Elasticsearch.Codec.encode(value, field)
+  def dump(value, field), do: Dowser.Elasticsearch.Codec.dump(value, field)
 end
 ```
 
@@ -243,8 +242,8 @@ wins:
 # globally
 config :dowser_elasticsearch, codec: MyApp.Codec
 
-# per context, alongside the decoder/encoder it belongs to
-decoder: {Dowser.Elasticsearch.Decoder, codec: MyApp.Codec}
+# per context, alongside the pass it belongs to
+decoder: {Dowser.Elasticsearch.Codec, codec: MyApp.Codec}
 
 # per request, on any API function
 Document.get("posts", "1", codec: MyApp.Codec)

@@ -6,27 +6,27 @@ defmodule Dowser.Elasticsearch.Codec.IP do
   @behaviour Dowser.Elasticsearch.Codec
 
   @impl true
-  def decode(value, _field) when is_binary(value) do
+  def load(value, _field) when is_binary(value) do
     case :inet.parse_address(String.to_charlist(value)) do
       {:ok, address} ->
         address
 
       {:error, error} ->
-        Logger.error("Unknown error while decoding Dowser.Elasticsearch.Codec.IP: #{error}")
+        Logger.error("Unknown error while loading Dowser.Elasticsearch.Codec.IP: #{error}")
 
         value
     end
   end
 
-  def decode(value, _field) do
+  def load(value, _field) do
     value
   end
 
   @impl true
-  def encode(address, _field) when is_tuple(address) do
+  def dump(address, _field) when is_tuple(address) do
     case :inet.ntoa(address) do
       {:error, error} ->
-        Logger.error("Unknown error while encoding Dowser.Elasticsearch.Codec.IP: #{error}")
+        Logger.error("Unknown error while dumping Dowser.Elasticsearch.Codec.IP: #{error}")
 
         address
 
@@ -35,7 +35,7 @@ defmodule Dowser.Elasticsearch.Codec.IP do
     end
   end
 
-  def encode(value, _field) do
+  def dump(value, _field) do
     value
   end
 end

@@ -8,22 +8,22 @@ defmodule Dowser.Elasticsearch.DocumentTest do
     @behaviour Dowser.Elasticsearch.Codec
 
     @impl true
-    def decode(value, %{"type" => "text"}) when is_binary(value), do: String.upcase(value)
-    def decode(value, field), do: Dowser.Elasticsearch.Codec.decode(value, field)
+    def load(value, %{"type" => "text"}) when is_binary(value), do: String.upcase(value)
+    def load(value, field), do: Dowser.Elasticsearch.Codec.load(value, field)
 
     @impl true
-    def encode(value, field), do: Dowser.Elasticsearch.Codec.encode(value, field)
+    def dump(value, field), do: Dowser.Elasticsearch.Codec.dump(value, field)
   end
 
   defmodule ExclaimCodec do
     @behaviour Dowser.Elasticsearch.Codec
 
     @impl true
-    def decode(value, %{"type" => "text"}) when is_binary(value), do: value <> "!"
-    def decode(value, field), do: Dowser.Elasticsearch.Codec.decode(value, field)
+    def load(value, %{"type" => "text"}) when is_binary(value), do: value <> "!"
+    def load(value, field), do: Dowser.Elasticsearch.Codec.load(value, field)
 
     @impl true
-    def encode(value, field), do: Dowser.Elasticsearch.Codec.encode(value, field)
+    def dump(value, field), do: Dowser.Elasticsearch.Codec.dump(value, field)
   end
 
   defp context(port), do: HTTPStub.context(port)
@@ -144,7 +144,7 @@ defmodule Dowser.Elasticsearch.DocumentTest do
     end
   end
 
-  describe "type casting via :decoder/:encoder" do
+  describe "type casting via Codec" do
     @mapping %{
       "properties" => %{
         "published_at" => %{"type" => "date", "format" => "strict_date_optional_time"}
@@ -285,7 +285,7 @@ defmodule Dowser.Elasticsearch.DocumentTest do
                Document.get("posts", "1",
                  context: [
                    endpoint: "http://127.0.0.1:#{port}",
-                   decoder: {Dowser.Elasticsearch.Decoder, codec: ExclaimCodec}
+                   decoder: {Dowser.Elasticsearch.Codec, codec: ExclaimCodec}
                  ]
                )
 
@@ -302,7 +302,7 @@ defmodule Dowser.Elasticsearch.DocumentTest do
                  codec: ExclaimCodec,
                  context: [
                    endpoint: "http://127.0.0.1:#{port}",
-                   decoder: {Dowser.Elasticsearch.Decoder, codec: UpcaseCodec}
+                   decoder: {Dowser.Elasticsearch.Codec, codec: UpcaseCodec}
                  ]
                )
 

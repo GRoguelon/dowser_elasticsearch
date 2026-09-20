@@ -92,9 +92,8 @@ defmodule Dowser.Elasticsearch.MappingCacher do
   Like `get/2`, but returns the mapping directly, or `nil` when there is none
   to be had — no index, no cacher running, or a failing fetch.
 
-  This is what `Dowser.Elasticsearch.Decoder` and `Dowser.Elasticsearch.Encoder`
-  call: a mapping that can't be resolved degrades a cast to identity rather
-  than failing the request.
+  This is what `Dowser.Elasticsearch.Codec` calls: a mapping that can't be
+  resolved degrades a cast to identity rather than failing the request.
   """
   @spec fetch(Context.ref(), term()) :: map() | nil
   def fetch(context, index)

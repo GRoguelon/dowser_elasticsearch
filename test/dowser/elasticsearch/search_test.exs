@@ -399,7 +399,7 @@ defmodule Dowser.Elasticsearch.SearchTest do
     end
   end
 
-  describe "type casting via :decoder" do
+  describe "type casting via Codec" do
     test "each hit's _source is cast against its own index mapping, at any nesting depth" do
       mapping = %{
         "properties" => %{

@@ -8,8 +8,8 @@ import Config
 #       contexts: [
 #         default: [
 #           endpoint: "http://localhost:9200",
-#           decoder: Dowser.Elasticsearch.Decoder,
-#           encoder: Dowser.Elasticsearch.Encoder
+#           decoder: Dowser.Elasticsearch.Codec,
+#           encoder: Dowser.Elasticsearch.Codec
 #         ]
 #       ]
 #

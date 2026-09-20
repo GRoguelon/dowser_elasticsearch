@@ -27,9 +27,8 @@ defmodule Dowser.Elasticsearch.Document do
   which picks the per-field codec for this one request (see
   `Dowser.Elasticsearch.Codec`).
 
-  Values are cast automatically wherever `Dowser.Elasticsearch.Decoder` and
-  `Dowser.Elasticsearch.Encoder` are configured as `:decoder`/`:encoder` — no
-  per-call option needed. Each function names the index its documents belong
+  Values are cast automatically wherever `Dowser.Elasticsearch.Codec` is
+  configured as `:decoder`/`:encoder` — no per-call option needed. Each function names the index its documents belong
   to and where in the request body a document source sits, so the encoder has
   the mapping it needs.
 
@@ -41,7 +40,7 @@ defmodule Dowser.Elasticsearch.Document do
   """
 
   alias Dowser.Elasticsearch.Client
-  alias Dowser.Elasticsearch.Encoder
+  alias Dowser.Elasticsearch.Codec
   alias Dowser.Elasticsearch.Helpers
   alias Dowser.Elasticsearch.Index
 
@@ -569,7 +568,7 @@ defmodule Dowser.Elasticsearch.Document do
         operations
 
       {fun, encoder_opts} ->
-        Encoder.encode_bulk(operations, fun, Keyword.put_new(encoder_opts, :index, index))
+        Codec.encode_bulk(operations, fun, Keyword.put_new(encoder_opts, :index, index))
     end
   end
 

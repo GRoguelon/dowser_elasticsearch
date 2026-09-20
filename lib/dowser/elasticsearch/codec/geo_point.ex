@@ -10,20 +10,20 @@ defmodule Dowser.Elasticsearch.Codec.GeoPoint do
   @behaviour Dowser.Elasticsearch.Codec
 
   @impl true
-  def decode(%{"lat" => lat, "lon" => lon}, _field) do
+  def load(%{"lat" => lat, "lon" => lon}, _field) do
     {lat, lon}
   end
 
-  def decode(value, _field) do
+  def load(value, _field) do
     value
   end
 
   @impl true
-  def encode({lat, lon}, _field) do
+  def dump({lat, lon}, _field) do
     %{"lat" => lat, "lon" => lon}
   end
 
-  def encode(value, _field) do
+  def dump(value, _field) do
     value
   end
 end

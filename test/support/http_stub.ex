@@ -20,13 +20,13 @@ defmodule Dowser.Elasticsearch.HTTPStub do
 
   @doc """
   Context options pointing at the stub server, with
-  `Dowser.Elasticsearch.Decoder`/`Dowser.Elasticsearch.Encoder` wired in.
+  `Dowser.Elasticsearch.Codec` wired in as both passes.
   """
   def context_with_casting(port) do
     [
       endpoint: "http://127.0.0.1:#{port}",
-      decoder: Dowser.Elasticsearch.Decoder,
-      encoder: Dowser.Elasticsearch.Encoder
+      decoder: Dowser.Elasticsearch.Codec,
+      encoder: Dowser.Elasticsearch.Codec
     ]
   end
 

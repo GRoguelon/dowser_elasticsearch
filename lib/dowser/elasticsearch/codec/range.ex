@@ -13,20 +13,20 @@ defmodule Dowser.Elasticsearch.Codec.Range do
   ## Public functions
 
   @impl true
-  def decode(%{"gte" => gte, "lte" => lte}, _field) when is_integer(gte) and is_integer(lte) do
+  def load(%{"gte" => gte, "lte" => lte}, _field) when is_integer(gte) and is_integer(lte) do
     Range.new(gte, lte)
   end
 
-  def decode(value, _field) do
+  def load(value, _field) do
     value
   end
 
   @impl true
-  def encode(%Range{} = range, _field) do
+  def dump(%Range{} = range, _field) do
     %{"gte" => range.first, "lte" => range.last}
   end
 
-  def encode(value, _field) do
+  def dump(value, _field) do
     value
   end
 end

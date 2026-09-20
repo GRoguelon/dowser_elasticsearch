@@ -8,23 +8,18 @@ TLS verification — and this one for what `dowser_elasticsearch` renamed on top
 of them.
 
 Most of it is a rename, so start with the table. Then read
-[One name that moved](#one-name-that-moved), which is the part a search-and-
-replace gets wrong, and [Watch out for silence](#watch-out-for-silence), which
-is the part the compiler cannot help you with.
+[Watch out for silence](#watch-out-for-silence), which is the part the compiler
+cannot help you with.
 
 ## At a glance
 
 | 0.1.1 | 0.2.0 |
 | --- | --- |
-| `codec_adapter: Dowser.Elasticsearch.Codec` | `decoder: Dowser.Elasticsearch.Decoder` **and** `encoder: Dowser.Elasticsearch.Encoder` |
-| `Codec.decode/2` (a whole response body) | `Dowser.Elasticsearch.Decoder.decode/2` |
-| `Codec.encode/2` (a whole request body) | `Dowser.Elasticsearch.Encoder.encode/2` |
-| `Codec.load/2` (one value) | `Dowser.Elasticsearch.Codec.decode/2` |
-| `Codec.dump/2` (one value) | `Dowser.Elasticsearch.Codec.encode/2` |
+| `codec_adapter: Dowser.Elasticsearch.Codec` | `decoder:` **and** `encoder:`, both `Dowser.Elasticsearch.Codec` |
 | `Dowser.Elasticsearch.Fields.Date` | `Dowser.Elasticsearch.Codec.Date` |
 | `@behaviour Dowser.Client.Field` | `@behaviour Dowser.Elasticsearch.Codec` |
 | `use Dowser.Client.Codec.Builder` + `cast/2` | plain `decode/2`/`encode/2` clauses |
-| `codec_opts: [...]` | `{Decoder, ...}`, or the `:codec` option |
+| `codec_opts: [...]` | `{Codec, ...}`, or the `:codec` option |
 | `config: ...` | `context: ...` |
 | `configs: [...]` | `contexts: [...]` |
 | `import_deps: [:dowser_client]` (for `cast: 2`) | nothing — there is no macro left |
@@ -66,19 +61,11 @@ A request still carrying `:config` is rejected with a `Dowser.Client.Error`
 rather than quietly going to the default cluster, so the compiler won't find
 these but the first test run will.
 
-## 3. One codec becomes two passes and a codec
+## 3. One adapter becomes two passes
 
-In 0.1.1, `Dowser.Elasticsearch.Codec` did two unrelated jobs: it walked whole
-bodies as `dowser_client`'s `:codec_adapter`, and it cast individual values
-through a `cast/2` table. 0.2.0 splits the first job in two — because reading
-and writing need different information — and leaves the second where it was:
-
-| | reads | writes |
-| --- | --- | --- |
-| a whole body | `Dowser.Elasticsearch.Decoder` | `Dowser.Elasticsearch.Encoder` |
-| one value | `Dowser.Elasticsearch.Codec.decode/2` | `Dowser.Elasticsearch.Codec.encode/2` |
-
-Wire the two passes onto the context in place of `:codec_adapter`:
+`dowser_client` splits `:codec_adapter` — which cast a whole body in both
+directions — into a `:decoder` and an `:encoder`, because reading and writing
+need different information. `Dowser.Elasticsearch.Codec` fills both slots:
 
 ```diff
   config :dowser_client,
@@ -87,11 +74,15 @@ Wire the two passes onto the context in place of `:codec_adapter`:
       default: [
         endpoint: "http://localhost:9200",
 -       codec_adapter: Dowser.Elasticsearch.Codec
-+       decoder: Dowser.Elasticsearch.Decoder,
-+       encoder: Dowser.Elasticsearch.Encoder
++       decoder: Dowser.Elasticsearch.Codec,
++       encoder: Dowser.Elasticsearch.Codec
       ]
     ]
 ```
+
+That is the whole of it. `decode/2` and `encode/2` still take a whole body,
+`load/2` and `dump/2` still take one value, and the four keep the meanings they
+had in 0.1.1.
 
 Casting is still opt-in and still needs no per-call option: every function in
 `Document` and `Search` names the index its documents belong to, and the
@@ -103,34 +94,32 @@ Two behaviours changed with the split, both because `dowser_client` now only
 ever hands an encoder a **document source**:
 
 - **A query is never cast.** In 0.1.1 a search body went through
-  `Codec.encode/2` like any other. It no longer does — a query value has no
-  mapping entry to anchor it. If you relied on that (a `DateTime` in a range
-  clause, say), move the casting into how you build the query.
+  `encode/2` like any other. It no longer does — a query value has no mapping
+  entry to anchor it. If you relied on that (a `DateTime` in a range clause,
+  say), move the casting into how you build the query.
 - **`update/4` casts `upsert` as well as `doc`**, in either key style. A
   `%{script: ...}` body is still left alone.
 
 ## 4. `Dowser.Elasticsearch.Fields.*` are `Dowser.Elasticsearch.Codec.*`
 
-The six built-in field modules moved and their two functions were renamed to
-match the direction they were always going:
+The six built-in field codecs moved under `Codec`, where the module that
+dispatches to them lives. `load/2` and `dump/2` are unchanged:
 
 ```diff
 - Dowser.Elasticsearch.Fields.Date.load(value, field)
-+ Dowser.Elasticsearch.Codec.Date.decode(value, field)
-
-- Dowser.Elasticsearch.Fields.IP.dump(value, field)
-+ Dowser.Elasticsearch.Codec.IP.encode(value, field)
++ Dowser.Elasticsearch.Codec.Date.load(value, field)
 ```
 
 `Binary`, `Date`, `DateRange`, `GeoPoint`, `IP` and `Range` all moved the same
-way. What each one casts is unchanged.
+way, and what each one casts is unchanged. The compiler finds every reference.
 
 ## 5. The `cast/2` macro is gone
 
 `Dowser.Client.Field` and `Dowser.Client.Codec.Builder` no longer exist
 upstream. Their job — the behaviour, and assembling a dispatcher — is now
-`Dowser.Elasticsearch.Codec` itself, and a codec of your own is a clause per
-direction plus a delegation for everything else:
+`Dowser.Elasticsearch.Codec` itself: `@behaviour Dowser.Elasticsearch.Codec`
+means `load/2` and `dump/2`, and a codec of your own is a clause per direction
+plus a delegation for everything else:
 
 ```diff
 - defmodule MyApp.Codec do
@@ -142,18 +131,18 @@ direction plus a delegation for everything else:
 +   @behaviour Dowser.Elasticsearch.Codec
 +
 +   @impl true
-+   def decode(value, %{"type" => "scaled_float", "scaling_factor" => factor}) do
++   def load(value, %{"type" => "scaled_float", "scaling_factor" => factor}) do
 +     value / factor
 +   end
 +
-+   def decode(value, field), do: Dowser.Elasticsearch.Codec.decode(value, field)
++   def load(value, field), do: Dowser.Elasticsearch.Codec.load(value, field)
 +
 +   @impl true
-+   def encode(value, %{"type" => "scaled_float", "scaling_factor" => factor}) do
++   def dump(value, %{"type" => "scaled_float", "scaling_factor" => factor}) do
 +     round(value * factor)
 +   end
 +
-+   def encode(value, field), do: Dowser.Elasticsearch.Codec.encode(value, field)
++   def dump(value, field), do: Dowser.Elasticsearch.Codec.dump(value, field)
 + end
 ```
 
@@ -180,9 +169,9 @@ compiler finds every one of these. Its formatter entry goes too:
 # per request, on any API function
 Dowser.Elasticsearch.Document.get("posts", "1", codec: MyApp.Codec)
 
-# per context, alongside the decoder/encoder it belongs to
-decoder: {Dowser.Elasticsearch.Decoder, codec: MyApp.Codec},
-encoder: {Dowser.Elasticsearch.Encoder, codec: MyApp.Codec}
+# per context, alongside the pass it belongs to
+decoder: {Dowser.Elasticsearch.Codec, codec: MyApp.Codec},
+encoder: {Dowser.Elasticsearch.Codec, codec: MyApp.Codec}
 
 # globally — the usual place for an application with one codec
 config :dowser_elasticsearch, codec: MyApp.Codec
@@ -190,11 +179,11 @@ config :dowser_elasticsearch, codec: MyApp.Codec
 
 In 0.1.1 a custom dispatcher could not be used on its own: it only got
 `load/2`/`dump/2`, so you had to write a whole-body module around it. That is
-no longer true — the envelope walking stays in `Decoder`/`Encoder`, and only
-the per-field dispatch changes.
+no longer true — the envelope walking stays in `Dowser.Elasticsearch.Codec`,
+and only the per-field dispatch changes.
 
-`:codec_opts` is gone. Whatever a decoder or encoder needs now travels with it,
-as `{Dowser.Elasticsearch.Decoder, index: "articles"}`.
+`:codec_opts` is gone. Whatever a pass needs now travels with it, as
+`{Dowser.Elasticsearch.Codec, index: "articles"}`.
 
 ## 6. `MappingCacher`
 
@@ -219,52 +208,6 @@ cached mapping — whichever fetched first won. Since credentials can change wha
 elsewhere), the key is now `{endpoint, scope, index}`, where the scope is a
 truncated SHA-256 of `:auth` and `:http_opts`. Nothing to change on your side
 unless you were reading the ETS table directly.
-
-## One name that moved
-
-`Dowser.Elasticsearch.Codec.decode/2` exists in both versions and means
-something different in each:
-
-```elixir
-# 0.1.1 — one value, against its mapping entry
-Dowser.Elasticsearch.Codec.load(value, %{"type" => "ip"})
-
-# 0.1.1 — a whole response body
-Dowser.Elasticsearch.Codec.decode(body, key_fn: &Function.identity/1)
-
-# 0.2.0 — one value
-Dowser.Elasticsearch.Codec.decode(value, %{"type" => "ip"})
-
-# 0.2.0 — a whole response body
-Dowser.Elasticsearch.Decoder.decode(body, key_fn: &Function.identity/1)
-```
-
-So a call to `Codec.decode/2` written against 0.1.1 still compiles against
-0.2.0 and does something else entirely: it takes the body as a *value* and the
-option list as a *mapping entry*, matches no known `"type"`, and hands the body
-straight back.
-
-How loudly that fails depends on how you wrote it. The 0.1.1 pass returned
-`{:ok, term}` and the 0.2.0 codec returns the term, so a call whose result you
-matched raises a `MatchError`:
-
-```elixir
-{:ok, body} = Dowser.Elasticsearch.Codec.decode(body, opts)
-```
-
-A call whose result you piped or bound plainly does not raise at all — it just
-silently stops casting.
-
-There are only two shapes to look for, and both are rare outside tests — the
-pass is normally driven by the context, not called directly:
-
-```
-Dowser.Elasticsearch.Codec.decode(   # whole body?  -> Decoder.decode/2
-Dowser.Elasticsearch.Codec.encode(   # whole body?  -> Encoder.encode/2
-```
-
-`load/2` and `dump/2` have no such problem: they no longer exist, so the
-compiler flags them.
 
 ## Watch out for silence
 
@@ -297,10 +240,9 @@ is the first thing to check.
       only for `dowser_client`; add `@derive JSON.Encoder` to structs you send.
 - [ ] `configs:` → `contexts:`, `config:` → `context:`.
 - [ ] Replace `codec_adapter: Dowser.Elasticsearch.Codec` with
-      `decoder: Dowser.Elasticsearch.Decoder` **and**
-      `encoder: Dowser.Elasticsearch.Encoder`.
-- [ ] `Dowser.Elasticsearch.Fields.X` → `Dowser.Elasticsearch.Codec.X`, and
-      their `load/2`/`dump/2` → `decode/2`/`encode/2`.
+      `decoder:` **and** `encoder:`, both `Dowser.Elasticsearch.Codec`.
+- [ ] `Dowser.Elasticsearch.Fields.X` → `Dowser.Elasticsearch.Codec.X`
+      (`load/2` and `dump/2` are unchanged).
 - [ ] Rewrite any `use Dowser.Client.Codec.Builder` module as `decode/2` and
       `encode/2` clauses delegating to `Dowser.Elasticsearch.Codec`, and point
       the casting at it with `:codec`.
@@ -311,6 +253,4 @@ is the first thing to check.
 - [ ] Move any casting your old codec did on *query* values into how you build
       the query.
 - [ ] Run the suite, then grep for the names under
-      [Watch out for silence](#watch-out-for-silence) and for
-      `Codec.decode(`/`Codec.encode(` under
-      [One name that moved](#one-name-that-moved).
+      [Watch out for silence](#watch-out-for-silence).

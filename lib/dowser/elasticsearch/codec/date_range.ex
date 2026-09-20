@@ -15,26 +15,26 @@ defmodule Dowser.Elasticsearch.Codec.DateRange do
   ## Public functions
 
   @impl true
-  def decode(%{"gte" => gte, "lte" => lte}, field) do
-    first = DateCodec.decode(gte, field)
-    last = DateCodec.decode(lte, field)
+  def load(%{"gte" => gte, "lte" => lte}, field) do
+    first = DateCodec.load(gte, field)
+    last = DateCodec.load(lte, field)
 
     Date.range(first, last)
   end
 
-  def decode(value, _field) do
+  def load(value, _field) do
     value
   end
 
   @impl true
-  def encode(%Date.Range{} = date_range, field) do
-    gte = DateCodec.encode(date_range.first, field)
-    lte = DateCodec.encode(date_range.last, field)
+  def dump(%Date.Range{} = date_range, field) do
+    gte = DateCodec.dump(date_range.first, field)
+    lte = DateCodec.dump(date_range.last, field)
 
     %{"gte" => gte, "lte" => lte}
   end
 
-  def encode(value, _field) do
+  def dump(value, _field) do
     value
   end
 end

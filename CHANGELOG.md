@@ -14,26 +14,22 @@ what changed, the guide says what to do about it.
 
 ### Added
 
-- `Dowser.Elasticsearch.Decoder` and `Dowser.Elasticsearch.Encoder` — the two
-  whole-body casting passes, wired onto a context as `dowser_client`'s
-  `:decoder` and `:encoder`. The decoder finds documents anywhere in a
-  response envelope and casts each against the mapping of its own `_index`;
-  the encoder casts a document source in a request body against the mapping of
-  the index it is going to.
-- A `:codec` option on every API function, choosing the per-field codec for one
+- A `:codec` option on every API function, choosing the field codec
+  `Dowser.Elasticsearch.Codec` dispatches `load/2`/`dump/2` through for one
   request. It resolves most-specific-first: request, then context (alongside
-  the decoder/encoder it belongs to), then
-  `config :dowser_elasticsearch, codec: ...`, then
-  `Dowser.Elasticsearch.Codec`.
+  the pass it belongs to), then `config :dowser_elasticsearch, codec: ...`,
+  then `Dowser.Elasticsearch.Codec` itself.
 - `Dowser.Elasticsearch.MappingCacher.fetch/2`, a `get/2` returning the mapping
   or `nil` rather than a result tuple, and `key/2`, an entry's cache key.
-- `Dowser.Elasticsearch.Encoder.encode_bulk/3`, which casts a bulk operation
-  list against the index named on each action line.
+- `Dowser.Elasticsearch.Codec.encode_bulk/3`, which casts a bulk operation list
+  against the index named on each action line.
 
 ### Changed
 
-- **The whole-body casting is split in two**, mirroring `dowser_client`'s split
-  of `:codec_adapter` into a `:decoder` and an `:encoder`:
+- **`:codec_adapter` becomes a `:decoder` and an `:encoder`**, mirroring
+  `dowser_client`'s split of one whole-body adapter into two passes.
+  `Dowser.Elasticsearch.Codec` fills both slots, and `decode/2`, `encode/2`,
+  `load/2` and `dump/2` keep the meanings they had in 0.1.1:
 
   ```diff
     config :dowser_client,
@@ -42,8 +38,8 @@ what changed, the guide says what to do about it.
         default: [
           endpoint: "http://localhost:9200",
   -       codec_adapter: Dowser.Elasticsearch.Codec
-  +       decoder: Dowser.Elasticsearch.Decoder,
-  +       encoder: Dowser.Elasticsearch.Encoder
+  +       decoder: Dowser.Elasticsearch.Codec,
+  +       encoder: Dowser.Elasticsearch.Codec
         ]
       ]
   ```
@@ -54,28 +50,27 @@ what changed, the guide says what to do about it.
   document source, because a query value has no mapping entry to anchor it.
   Casting an old codec did on query values has to move into how the query is
   built.
-- **`Dowser.Elasticsearch.Codec` is now the per-field codec** both passes
-  dispatch into, one value at a time — the role `Dowser.Client.Field` and
-  `Dowser.Client.Codec.Builder` used to share, and which `dowser_client` no
-  longer ships. It is a plain module: a `%{type => module}` table, `decode/2`
-  and `encode/2`, and the behaviour each entry in that table implements.
-  Covering one more mapping type is a clause per direction and a delegation
-  for the rest; delegating last inherits the built-in casts, the `nil`
-  short-circuit and the fall-through to identity, and a clause matching a
-  built-in type replaces that cast.
-- **A custom codec no longer means rewriting the envelope walker.** In 0.1.1 a
-  `Codec.Builder` module only got `load/2`/`dump/2`, so it could not be used on
-  its own. Now the walking stays in `Decoder`/`Encoder` and only the per-field
-  dispatch changes.
 - **`Dowser.Elasticsearch.Fields.*` are now `Dowser.Elasticsearch.Codec.*`**,
-  and their `load/2`/`dump/2` are `decode/2`/`encode/2` — the same names the
-  two passes use, in the same direction:
+  under the module that dispatches to them. Their `load/2` and `dump/2` are
+  unchanged:
 
   ```diff
   - Dowser.Elasticsearch.Fields.Date.load(value, field)
-  + Dowser.Elasticsearch.Codec.Date.decode(value, field)
+  + Dowser.Elasticsearch.Codec.Date.load(value, field)
   ```
 
+- **`@behaviour Dowser.Elasticsearch.Codec` replaces
+  `@behaviour Dowser.Client.Field`**, which `dowser_client` no longer ships,
+  and the `use`/`cast` macro pair that assembled a dispatcher is gone with
+  `Dowser.Client.Codec.Builder`. Covering one more mapping type is a `load/2`
+  and a `dump/2` clause plus a delegation back to
+  `Dowser.Elasticsearch.Codec`; delegating last inherits the built-in casts,
+  the `nil` short-circuit and the fall-through to identity, and a clause
+  matching a built-in type replaces that cast.
+- **A custom field codec no longer means rewriting the envelope walker.** In
+  0.1.1 a `Codec.Builder` module only got `load/2`/`dump/2`, so it could not be
+  used on its own. Now the walking stays in `Dowser.Elasticsearch.Codec` and
+  `:codec` points it at yours.
 - Every API function's `:config` option is now `:context` — `dowser_client`
   rejects a request still carrying `:config` rather than silently sending it to
   the default cluster.
@@ -111,8 +106,8 @@ what changed, the guide says what to do about it.
   `@behaviour Dowser.Client.Field`. A codec is now plain function clauses, so
   the `cast: 2` formatter entry goes too — drop `import_deps: [:dowser_client]`
   from `.formatter.exs` if it was only there for that.
-- `:codec_opts`. Whatever a decoder or encoder needs travels with it, as
-  `{Dowser.Elasticsearch.Decoder, index: "articles"}`.
+- `:codec_opts`. Whatever a pass needs travels with it, as
+  `{Dowser.Elasticsearch.Codec, index: "articles"}`.
 
 ## [0.1.1] - 2026-08-17
 
