@@ -54,6 +54,34 @@ defmodule Dowser.Elasticsearch.CodecTest do
       assert Codec.load("2026-09-20T17:39:09", field) == ~U[2026-09-20 17:39:09Z]
     end
 
+    test "a declared format is read leniently, whatever precision the value has" do
+      # Elasticsearch writes to the declared precision but the index can hold
+      # values that predate the mapping, and elasticsearch_ex read these too.
+      strict = %{"type" => "date", "format" => "strict_date_time"}
+
+      assert Codec.load("2026-09-20T20:46:03Z", strict) == ~U[2026-09-20 20:46:03Z]
+      assert Codec.load("2026-09-20T20:46:03.899Z", strict) == ~U[2026-09-20 20:46:03.899Z]
+      assert Codec.load("2026-09-20T15:46:03-05:00", strict) == ~U[2026-09-20 20:46:03Z]
+
+      no_millis = %{"type" => "date", "format" => "strict_date_time_no_millis"}
+
+      assert Codec.load("2026-09-20T20:46:03.899Z", no_millis) == ~U[2026-09-20 20:46:03.899Z]
+
+      # A date-only format still only reads a date.
+      assert Codec.load("2026-09-20T20:46:03Z", %{"type" => "date", "format" => "strict_date"}) ==
+               "2026-09-20T20:46:03Z"
+    end
+
+    test "dumping keeps the precision the format declares" do
+      date_time = ~U[2026-09-20 20:46:03.899123Z]
+
+      assert Codec.dump(date_time, %{"type" => "date", "format" => "strict_date_time"}) ==
+               "2026-09-20T20:46:03.899Z"
+
+      assert Codec.dump(date_time, %{"type" => "date", "format" => "strict_date_time_no_millis"}) ==
+               "2026-09-20T20:46:03Z"
+    end
+
     test "an unparseable date still passes through untouched" do
       assert Codec.load("not a date", %{"type" => "date"}) == "not a date"
       assert Codec.load("2026-13-45T99:99:99Z", %{"type" => "date"}) == "2026-13-45T99:99:99Z"

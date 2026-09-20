@@ -27,6 +27,9 @@ defmodule Dowser.Elasticsearch.Codec.Date do
   # fraction mandatory in practice, so they are parsed rather than matched.
   @date_optional_time_formats ~w[strict_date_optional_time strict_date_optional_time_nanos]
 
+  @date_time_formats @date_time_second_formats ++
+                       @date_time_millisecond_formats ++ @date_time_microsecond_formats
+
   @default_format ~w[strict_date_optional_time epoch_millis]
 
   ## Public functions
@@ -94,53 +97,14 @@ defmodule Dowser.Elasticsearch.Codec.Date do
     end
   end
 
-  for format <- @date_time_second_formats do
-    defp do_load(
-           <<_::binary-size(4), "-", _::binary-size(2), "-", _::binary-size(2), "T",
-             _::binary-size(2), ":", _::binary-size(2), ":", _::binary-size(2), "Z">> = value,
-           unquote(format)
-         ) do
-      case DateTime.from_iso8601(value) do
-        {:ok, date_time, 0} ->
-          date_time
-
-        _ ->
-          nil
-      end
-    end
-  end
-
-  for format <- @date_time_millisecond_formats do
-    defp do_load(
-           <<_::binary-size(4), "-", _::binary-size(2), "-", _::binary-size(2), "T",
-             _::binary-size(2), ":", _::binary-size(2), ":", _::binary-size(2), ".",
-             _::binary-size(3), "Z">> = value,
-           unquote(format)
-         ) do
-      case DateTime.from_iso8601(value) do
-        {:ok, date_time, 0} ->
-          date_time
-
-        _ ->
-          nil
-      end
-    end
-  end
-
-  for format <- @date_time_microsecond_formats do
-    defp do_load(
-           <<_::binary-size(4), "-", _::binary-size(2), "-", _::binary-size(2), "T",
-             _::binary-size(2), ":", _::binary-size(2), ":", _::binary-size(2), ".",
-             _::binary-size(6), "Z">> = value,
-           unquote(format)
-         ) do
-      case DateTime.from_iso8601(value) do
-        {:ok, date_time, 0} ->
-          date_time
-
-        _ ->
-          nil
-      end
+  # Read leniently, write to the declared precision. A mapping's `format` says
+  # how Elasticsearch writes the field, and matching it shape by shape made
+  # every optional part of it mandatory — a `strict_date_time` field holding
+  # `2026-09-20T20:46:03Z` matched no clause and came back as a string. The
+  # declared precision still governs `dump/2` below.
+  for format <- @date_time_formats do
+    defp do_load(value, unquote(format)) when is_binary(value) do
+      parse_date_time(value)
     end
   end
 
@@ -159,24 +123,28 @@ defmodule Dowser.Elasticsearch.Codec.Date do
     end
 
     defp do_load(value, unquote(format)) when is_binary(value) do
-      case DateTime.from_iso8601(value) do
-        {:ok, date_time, _offset} ->
-          date_time
-
-        # Elasticsearch reads a time with no offset as UTC.
-        {:error, :missing_offset} ->
-          case NaiveDateTime.from_iso8601(value) do
-            {:ok, naive} -> DateTime.from_naive!(naive, "Etc/UTC")
-            _ -> nil
-          end
-
-        _ ->
-          nil
-      end
+      parse_date_time(value)
     end
   end
 
   defp do_load(_value, _format), do: nil
+
+  defp parse_date_time(value) do
+    case DateTime.from_iso8601(value) do
+      {:ok, date_time, _offset} ->
+        date_time
+
+      # Elasticsearch reads a time with no offset as UTC.
+      {:error, :missing_offset} ->
+        case NaiveDateTime.from_iso8601(value) do
+          {:ok, naive} -> DateTime.from_naive!(naive, "Etc/UTC")
+          _ -> nil
+        end
+
+      _ ->
+        nil
+    end
+  end
 
   defp do_dump(%NaiveDateTime{} = naive_date_time, format) do
     naive_date_time

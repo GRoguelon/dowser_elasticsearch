@@ -108,6 +108,16 @@ what changed, the guide says what to do about it.
 
 ### Fixed
 
+- **A `date` was only cast when its value matched the declared format shape
+  exactly.** Each format was matched byte by byte, so a field mapped
+  `strict_date_time` holding `2026-09-20T20:46:03Z` — no fractional second —
+  matched no clause and came back as the string it arrived as. An index holds
+  values written before its mapping, so the format describes how Elasticsearch
+  *writes* a field, not everything it contains. Reading now parses any ISO 8601
+  date-time for any date-time format, including an offset (normalized to UTC)
+  and a time with none at all (read as UTC, as Elasticsearch reads it).
+  Date-only formats still read only a date, `dump/2` still writes the precision
+  the format declares, and an unparseable value still passes through untouched.
 - **`strict_date_optional_time` made the fraction mandatory.** It is
   Elasticsearch's default `date` format, and everything after the date in it
   is optional — the time, its fractional second, the offset. It was listed
