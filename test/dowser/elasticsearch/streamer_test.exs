@@ -204,11 +204,50 @@ defmodule Dowser.Elasticsearch.StreamerTest do
     end
   end
 
-  # `Dowser.Client.HTTP.Stub` lives in the process dictionary of the process
-  # that makes the request, and a sliced stream makes its requests from spawned
-  # tasks — so these go through a real socket instead. Worth knowing: the same
-  # is true of any application testing a sliced stream.
   describe "stream/2 — :slice" do
+    test "a slice in the query body is forwarded untouched", %{requests: requests} do
+      stub_pages(requests, %{2 => [[]]})
+
+      %{query: %{}, slice: %{"id" => 2, "max" => 8}}
+      |> Streamer.stream(index: "posts", context: @context)
+      |> Enum.to_list()
+
+      assert [%{body: body}] = searches(requests)
+      assert body["slice"] == %{"id" => 2, "max" => 8}
+    end
+
+    test "no slice means no slice in the body", %{requests: requests} do
+      stub_pages(requests, %{nil => [[]]})
+
+      %{query: %{}} |> Streamer.stream(index: "posts", context: @context) |> Enum.to_list()
+
+      assert [%{body: body}] = searches(requests)
+      refute Map.has_key?(body, "slice")
+    end
+
+    test "a :slice option says where slice belongs rather than being ignored" do
+      assert_raise ArgumentError, ~r/belongs in the query body/, fn ->
+        Streamer.stream(%{query: %{}}, index: "posts", slice: %{"id" => 0, "max" => 2})
+      end
+    end
+
+    test ":verify_pit false skips the liveness check", %{requests: requests} do
+      stub_pages(requests, %{nil => [[]]})
+
+      %{query: %{}}
+      |> Streamer.stream(pit: "pit-given", verify_pit: false, context: @context)
+      |> Enum.to_list()
+
+      assert [%{body: body}] = searches(requests)
+      refute match?(%{"query" => %{"match_none" => _}}, body)
+    end
+  end
+
+  # `Dowser.Client.HTTP.Stub` lives in the process dictionary of the process
+  # that makes the request, and stream_with_slice/4 makes its requests from
+  # tasks — so these go through a real socket instead. Worth knowing: the same
+  # is true of any application testing a sliced walk.
+  describe "stream_with_slice/4" do
     defp pool(requests, pages) do
       counters = start_supervised!({Agent, fn -> %{} end}, id: :pool_counters)
 
@@ -240,15 +279,15 @@ defmodule Dowser.Elasticsearch.StreamerTest do
       [endpoint: "http://127.0.0.1:#{port}"]
     end
 
-    test "an integer fans out, each slice carrying its id and max", %{requests: requests} do
+    test "runs stream_fn over every slice and yields its results", %{requests: requests} do
       context = pool(requests, %{0 => [[hit(1)]], 1 => [[hit(2)]], 2 => [[hit(3)]]})
 
-      hits =
+      results =
         %{query: %{}, size: 5}
-        |> Streamer.stream(index: "posts", slice: 3, context: context)
+        |> Streamer.stream_with_slice(&Enum.count/1, 3, index: "posts", context: context)
         |> Enum.to_list()
 
-      assert hits |> Enum.map(& &1["_id"]) |> Enum.sort() == ["1", "2", "3"]
+      assert Enum.sum(results) == 3
 
       slices = searches(requests) |> Enum.map(& &1.body["slice"]) |> Enum.sort_by(& &1["id"])
 
@@ -259,12 +298,34 @@ defmodule Dowser.Elasticsearch.StreamerTest do
              ]
     end
 
-    test "{max, opts} merges the extras into every slice", %{requests: requests} do
+    test "runs stream_fn inside the task that owns the slice", %{requests: requests} do
+      context = pool(requests, %{0 => [[hit(1)]], 1 => [[hit(2)]]})
+      caller = self()
+
+      pids =
+        %{query: %{}, size: 5}
+        |> Streamer.stream_with_slice(
+          fn slice ->
+            Enum.to_list(slice)
+            self()
+          end,
+          2,
+          index: "posts",
+          context: context
+        )
+        |> Enum.to_list()
+
+      assert length(pids) == 2
+      refute caller in pids
+      assert pids |> Enum.uniq() |> length() == 2
+    end
+
+    test "a slice in the query body is the base each slice is built on", %{requests: requests} do
       context = pool(requests, %{0 => [[]], 1 => [[]]})
 
-      %{query: %{}}
-      |> Streamer.stream(index: "posts", slice: {2, field: "_id"}, context: context)
-      |> Enum.to_list()
+      %{query: %{}, slice: %{"field" => "_id"}}
+      |> Streamer.stream_with_slice(&Stream.run/1, 2, index: "posts", context: context)
+      |> Stream.run()
 
       assert searches(requests) |> Enum.map(& &1.body["slice"]) |> Enum.sort_by(& &1["id"]) == [
                %{"id" => 0, "max" => 2, "field" => "_id"},
@@ -275,44 +336,73 @@ defmodule Dowser.Elasticsearch.StreamerTest do
     test "each slice pages independently", %{requests: requests} do
       context = pool(requests, %{0 => [[hit(1)], [hit(2)], []], 1 => [[hit(9)], []]})
 
-      hits =
+      ids =
         %{query: %{}, size: 1}
-        |> Streamer.stream(index: "posts", slice: 2, context: context)
-        |> Enum.to_list()
+        |> Streamer.stream_with_slice(&Enum.map(&1, fn hit -> hit["_id"] end), 2,
+          index: "posts",
+          context: context
+        )
+        |> Enum.concat()
+        |> Enum.sort()
 
-      assert hits |> Enum.map(& &1["_id"]) |> Enum.sort() == ["1", "2", "9"]
+      assert ids == ["1", "2", "9"]
 
       by_slice = Enum.group_by(searches(requests), & &1.body["slice"]["id"])
       assert by_slice |> Map.fetch!(0) |> Enum.map(& &1.body["search_after"]) == [nil, [1], [2]]
       assert by_slice |> Map.fetch!(1) |> Enum.map(& &1.body["search_after"]) == [nil, [9]]
     end
 
-    test "a map is one slice, taken verbatim", %{requests: requests} do
-      stub_pages(requests, %{2 => [[]]})
+    test "opens one point in time for all the slices, and closes it once", %{requests: requests} do
+      context = pool(requests, %{0 => [[]], 1 => [[]], 2 => [[]], 3 => [[]]})
 
       %{query: %{}}
-      |> Streamer.stream(index: "posts", slice: %{"id" => 2, "max" => 8}, context: @context)
-      |> Enum.to_list()
+      |> Streamer.stream_with_slice(&Stream.run/1, 4, index: "posts", context: context)
+      |> Stream.run()
 
-      assert [%{body: body}] = searches(requests)
-      assert body["slice"] == %{"id" => 2, "max" => 8}
+      all = requests |> Agent.get(& &1) |> Enum.reverse()
+      assert all |> Enum.filter(&(&1.url =~ "/posts/_pit")) |> length() == 1
+      assert all |> Enum.filter(&(&1.url == "/_pit")) |> length() == 1
+
+      # opened first, closed last, four searches in between
+      assert List.first(all).url =~ "/posts/_pit"
+      assert List.last(all).url == "/_pit"
+      assert length(searches(requests)) == 4
     end
 
-    test "1 is an unsliced walk, with no slice in the body", %{requests: requests} do
-      stub_pages(requests, %{nil => [[]]})
+    test "no slice is charged for a liveness check", %{requests: requests} do
+      context = pool(requests, %{0 => [[]], 1 => [[]]})
 
       %{query: %{}}
-      |> Streamer.stream(index: "posts", slice: 1, context: @context)
-      |> Enum.to_list()
+      |> Streamer.stream_with_slice(&Stream.run/1, 2, index: "posts", context: context)
+      |> Stream.run()
 
-      assert [%{body: body}] = searches(requests)
-      refute Map.has_key?(body, "slice")
+      refute Enum.any?(searches(requests), &match?(%{"query" => %{"match_none" => _}}, &1.body))
     end
 
-    test "rejects a shape it cannot split" do
-      assert_raise ArgumentError, ~r/invalid :slice/, fn ->
-        Streamer.stream(%{query: %{}}, index: "posts", slice: "four")
+    test "closes the point in time when a slice raises", %{requests: requests} do
+      context = pool(requests, %{0 => [[hit(1)]], 1 => [[hit(2)]]})
+
+      assert_raise RuntimeError, ~r/boom/, fn ->
+        %{query: %{}}
+        |> Streamer.stream_with_slice(fn _slice -> raise "boom" end, 2,
+          index: "posts",
+          context: context
+        )
+        |> Stream.run()
       end
+
+      assert requests |> Agent.get(& &1) |> Enum.any?(&(&1.url == "/_pit"))
+    end
+
+    test "nothing is requested until the result is enumerated", %{requests: requests} do
+      context = pool(requests, %{0 => [[]]})
+
+      Streamer.stream_with_slice(%{query: %{}}, &Stream.run/1, 1,
+        index: "posts",
+        context: context
+      )
+
+      assert Agent.get(requests, & &1) == []
     end
   end
 

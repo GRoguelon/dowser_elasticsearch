@@ -20,7 +20,7 @@ defmodule Dowser.Elasticsearch.Streamer do
 
   `search_after` is sequential by construction — a page's cursor is the last
   hit of the page before it — so one stream cannot fetch pages in parallel.
-  `:slice` is how you get parallelism; see below.
+  `stream_with_slice/4` is how you get parallelism; see below.
 
   ## Options
 
@@ -34,13 +34,9 @@ defmodule Dowser.Elasticsearch.Streamer do
     * `:keep_alive` — how long Elasticsearch holds the point in time, extended
       on every search. Defaults to `"1m"`. Long enough to cover the gap
       between two pages, not the whole walk.
-    * `:slice` — how to split the point in time, in one of three shapes:
-      * an integer — that many slices, walked **concurrently**.
-      * `{max, opts}` — the same, with `opts` merged into each slice, for
-        `field: "_id"` and friends.
-      * a map — one slice, walked on its own, verbatim. This is the shape for
-        fanning out across nodes rather than processes: each node walks
-        `%{id: n, max: total}` of a point in time you opened and pass in.
+    * `:verify_pit` — whether a `:pit` you passed is checked before the walk
+      starts. `true` by default; `false` when you just opened it and know it
+      is alive.
 
   Everything else is forwarded to `Dowser.Elasticsearch.Search`, so `:context`,
   `:codec`, `:keys` and `:http_opts` all work as usual.
@@ -51,43 +47,25 @@ defmodule Dowser.Elasticsearch.Streamer do
 
   ## Slicing
 
-  `:slice` splits the point in time into disjoint subsets and walks them at
-  once. Elasticsearch divides first across shards, then within each shard by
-  contiguous ranges of Lucene document ids, so the natural ceiling is your
-  shard count — more slices than shards subdivides a shard rather than adding
-  parallelism.
+  `stream_with_slice/4` splits the point in time into disjoint subsets and
+  walks them at once. Elasticsearch divides first across shards, then within
+  each shard by contiguous ranges of Lucene document ids, so the natural
+  ceiling is your shard count — more slices than shards subdivides a shard
+  rather than adding parallelism.
 
       %{query: %{match_all: %{}}, size: 1_000}
-      |> Dowser.Elasticsearch.Streamer.stream(index: "posts", slice: 4)
-      |> Enum.each(&process/1)
+      |> Dowser.Elasticsearch.Streamer.stream_with_slice(&Enum.count/1, 4, index: "posts")
+      |> Enum.sum()
 
-  Anything else the slice needs travels in the second element of a tuple, and
-  is merged into every slice:
+  Note what it takes: a function, not a stream. Each slice is consumed inside
+  its own task, because a lazy stream handed back out of a task would run
+  every page in the caller — concurrent in name only.
 
-      stream(query, index: "posts", slice: {7, field: "_id"})
-      # each request carries %{"id" => 0..6, "max" => 7, "field" => "_id"}
+  To spread a walk across *nodes* instead, open the point in time yourself and
+  give each node one slice. `slice` is an ordinary search body field, so it
+  goes in the query rather than the options:
 
-  All slices share one point in time, which is why the stream owns it: no
-  single slice can close it without cutting the others off. To spread the walk
-  across *nodes* instead, open the point in time yourself and give each node
-  one slice as a map:
-
-      stream(query, pit: pit_id, slice: %{id: 2, max: 8})
-
-  The merged stream stays lazy — one request per slice is in flight at a time,
-  so at most `slices × size` hits are held. Those requests are made from
-  spawned tasks rather than the enumerating process, which matters for anything
-  process-scoped; an unsliced stream requests inline. That is also why the fan-out is not
-  `Task.async_stream/3`: it yields one result per element, so a slice would
-  have to be fully materialized before you saw any of it.
-
-  `Task.async_stream/3` is still the right tool one level out, when the work
-  per hit is the bottleneck rather than the fetching:
-
-      query
-      |> Dowser.Elasticsearch.Streamer.stream(index: "posts")
-      |> Task.async_stream(&process/1, ordered: false)
-      |> Stream.run()
+      stream(%{query: ..., slice: %{id: 2, max: 8}}, pit: pit_id)
 
   ## Failure
 
@@ -130,9 +108,9 @@ defmodule Dowser.Elasticsearch.Streamer do
     {index, opts} = Keyword.pop(opts, :index)
     {pit_id, opts} = Keyword.pop(opts, :pit)
     {keep_alive, opts} = Keyword.pop(opts, :keep_alive, @default_keep_alive)
-    {slice, opts} = Keyword.pop(opts, :slice)
+    {verify?, opts} = Keyword.pop(opts, :verify_pit, true)
 
-    splits = split!(slice)
+    reject_slice_opt!(opts)
     shaper = shaper(opts)
     query = prepare_query(query)
     size = fetch_field(query, :size, @default_size)
@@ -144,39 +122,151 @@ defmodule Dowser.Elasticsearch.Streamer do
     opts = Keyword.merge(opts, keys: :strings, decoder: &raw/2)
 
     Stream.resource(
-      fn -> start(query, index, pit_id, keep_alive, splits, size, opts) end,
+      fn -> start(index, pit_id, verify?, keep_alive, size, opts) end,
       &next(&1, query, shaper, opts),
       &stop(&1, opts)
     )
   end
 
-  ## Private functions — the resource
+  @doc """
+  Walks `slice_nbr` slices of one point in time at once, running `stream_fn`
+  over each.
 
-  defp start(query, index, pit_id, keep_alive, splits, size, opts) do
-    {pit_id, owned?} = open(index, pit_id, keep_alive, opts)
-    state = %{pit: pit_id, keep_alive: keep_alive, owned?: owned?, size: size}
+  `stream_fn` receives a slice's stream and is called **inside** the task that
+  owns it, so the hits never cross a process boundary — which is the whole
+  point: returning a lazy stream from a task would build it there and then run
+  every page back in the caller.
 
-    case splits do
-      # One split needs no concurrency — a single cursor fetches, emits and
-      # fetches again — and running it inline keeps the stream lazy to the
-      # page, keeps stacktraces direct, and keeps every request in the
-      # enumerating process.
-      [split] ->
-        Map.merge(state, %{split: split, cursor: :start})
+      %{query: %{match_all: %{}}, size: 1_000}
+      |> Dowser.Elasticsearch.Streamer.stream_with_slice(
+        fn slice -> Enum.count(slice) end,
+        4,
+        index: "posts"
+      )
+      |> Enum.sum()
 
-      splits ->
-        Enum.reduce(splits, Map.put(state, :tasks, %{}), &launch(&2, &1, :start, query, opts))
-    end
+  The result is a stream of whatever `stream_fn` returned, one per slice, so
+  keep those small — a count, a sum, `:ok`. A slice that returns everything it
+  read defeats the streaming.
+
+  A `slice` already in the query body is the base every slice is built on, so
+  anything else the split needs travels with it; `id` and `max` are computed
+  here and win:
+
+      stream_with_slice(%{query: ..., slice: %{field: "_id"}}, &f/1, 7, index: "posts")
+      # each walk carries %{"field" => "_id", "id" => 0..6, "max" => 7}
+
+  All slices share one point in time, opened here and closed when the stream
+  finishes, however it finishes. Pass `:pit` to use one of your own; it is
+  checked once, and left open.
+
+  ## Options
+
+  Takes everything `stream/2` does, plus:
+
+    * `:max_concurrency` — how many slices run at once. Defaults to
+      `slice_nbr`, so every slice is in flight; lower it to bound the load a
+      walk puts on the cluster.
+    * `:timeout` — per slice, not per request. Defaults to `:infinity`, since
+      a slice runs as long as it takes to walk; `Task.async_stream/3` would
+      otherwise give up after five seconds.
+    * `:ordered` — `false` by default, so a finished slice is not held back by
+      a slower one.
+
+  A slice that fails raises: an exception from its own walk, or a
+  `RuntimeError` naming the slice if the task exited or timed out.
+  """
+  @spec stream_with_slice(query(), (Enumerable.t() -> term()), pos_integer(), keyword()) ::
+          Enumerable.t()
+  def stream_with_slice(%{} = query, stream_fn, slice_nbr, opts \\ [])
+      when is_function(stream_fn, 1) and is_integer(slice_nbr) and slice_nbr > 0 do
+    {index, opts} = Keyword.pop(opts, :index)
+    {pit_id, opts} = Keyword.pop(opts, :pit)
+    {keep_alive, opts} = Keyword.pop(opts, :keep_alive, @default_keep_alive)
+    {task_opts, opts} = task_opts(opts, slice_nbr)
+
+    # `Stream.transform/4` is what brackets the point in time around a lazy
+    # stream: nothing opens until the result is enumerated, and `close` runs
+    # whether the enumeration completes, halts early or raises.
+    Stream.transform(
+      [:slices],
+      fn -> open(index, pit_id, true, keep_alive, opts) end,
+      fn :slices, {pit_id, owned?} ->
+        {walk(query, stream_fn, slice_nbr, pit_id, keep_alive, task_opts, opts), {pit_id, owned?}}
+      end,
+      fn
+        {pit_id, true} -> close(pit_id, opts)
+        {_pit_id, false} -> :ok
+      end
+    )
   end
 
-  ## Private functions — one cursor, inline
+  ## Private functions — slices
+
+  defp walk(query, stream_fn, slice_nbr, pit_id, keep_alive, task_opts, opts) do
+    base = fetch_field(query, :slice, %{})
+
+    0..(slice_nbr - 1)
+    |> Task.async_stream(
+      fn id ->
+        sliced = put_field(query, :slice, Map.merge(base, %{"id" => id, "max" => slice_nbr}))
+
+        # The point in time was opened — or checked — above, so each slice is
+        # spared a liveness check of its own.
+        walk_opts =
+          Keyword.merge(opts,
+            pit: pit_id,
+            verify_pit: false,
+            keep_alive: keep_alive
+          )
+
+        # `Task.async_stream/3` links, so a slice that raised would take the
+        # caller down with it — before `Stream.transform/4` could close the
+        # point in time. Carrying the failure back as a value instead keeps the
+        # cleanup, and re-raising below keeps the original exception and its
+        # stacktrace.
+        try do
+          sliced |> stream(walk_opts) |> stream_fn.()
+        rescue
+          exception -> {:raised, exception, __STACKTRACE__}
+        catch
+          kind, reason -> {:caught, kind, reason, __STACKTRACE__}
+        else
+          result -> {:returned, result}
+        end
+      end,
+      task_opts
+    )
+    |> Stream.map(fn
+      {:ok, {:returned, result}} -> result
+      {:ok, {:raised, exception, stacktrace}} -> reraise(exception, stacktrace)
+      {:ok, {:caught, kind, reason, stacktrace}} -> :erlang.raise(kind, reason, stacktrace)
+      {:exit, reason} -> raise "a slice of the stream exited: #{inspect(reason)}"
+    end)
+  end
+
+  defp task_opts(opts, slice_nbr) do
+    {max_concurrency, opts} = Keyword.pop(opts, :max_concurrency, slice_nbr)
+    {timeout, opts} = Keyword.pop(opts, :timeout, :infinity)
+    {ordered, opts} = Keyword.pop(opts, :ordered, false)
+
+    {[max_concurrency: max_concurrency, timeout: timeout, ordered: ordered], opts}
+  end
+
+  ## Private functions — the resource
+
+  defp start(index, pit_id, verify?, keep_alive, size, opts) do
+    {pit_id, owned?} = open(index, pit_id, verify?, keep_alive, opts)
+
+    %{pit: pit_id, keep_alive: keep_alive, owned?: owned?, size: size, cursor: :start}
+  end
 
   defp next(%{cursor: :done} = state, _query, _shaper, _opts) do
     {:halt, state}
   end
 
-  defp next(%{cursor: cursor} = state, query, shaper, opts) do
-    case query |> build(state, state.split, cursor) |> Search.search(opts) do
+  defp next(state, query, shaper, opts) do
+    case query |> build(state) |> Search.search(opts) do
       {:ok, response} ->
         {hits, cursor, pit_id} = page(response, state.size)
 
@@ -187,79 +277,16 @@ defmodule Dowser.Elasticsearch.Streamer do
     end
   end
 
-  ## Private functions — several slices, concurrently
-
-  defp next(%{tasks: tasks} = state, _query, _shaper, _opts) when map_size(tasks) == 0 do
-    {:halt, state}
-  end
-
-  defp next(%{tasks: _tasks} = state, query, shaper, opts) do
-    {split, result, tasks} = await_any(state.tasks)
-    state = %{state | tasks: tasks}
-
-    case result do
-      {:ok, response} ->
-        {hits, cursor, pit_id} = page(response, state.size)
-        state = %{state | pit: pit_id || state.pit}
-        state = if cursor == :done, do: state, else: launch(state, split, cursor, query, opts)
-
-        {Enum.map(hits, shaper), state}
-
-      {:error, exception} ->
-        raise exception
-
-      {:raised, exception, stacktrace} ->
-        reraise(exception, stacktrace)
-    end
-  end
-
-  defp launch(state, split, cursor, query, opts) do
-    body = build(query, state, split, cursor)
-    task = Task.async(fn -> run(body, opts) end)
-
-    %{state | tasks: Map.put(state.tasks, task.ref, {split, task})}
-  end
-
-  # Nothing here may crash: `Task.async/1` links, and a linked crash would take
-  # the enumerating process down without giving `Stream.resource/3` the chance
-  # to close the point in time.
-  defp run(body, opts) do
-    Search.search(body, opts)
-  rescue
-    exception -> {:raised, exception, __STACKTRACE__}
-  end
-
-  defp await_any(tasks) do
-    receive do
-      {ref, result} when is_map_key(tasks, ref) ->
-        Process.demonitor(ref, [:flush])
-        {split, _task} = Map.fetch!(tasks, ref)
-
-        {split, result, Map.delete(tasks, ref)}
-
-      {:DOWN, ref, :process, _pid, reason} when is_map_key(tasks, ref) ->
-        {split, _task} = Map.fetch!(tasks, ref)
-
-        raise "the slice #{inspect(split)} of the stream died: #{inspect(reason)}"
-    end
-  end
-
   defp stop(state, opts) do
-    state
-    |> Map.get(:tasks, %{})
-    |> Enum.each(fn {_ref, {_split, task}} -> Task.shutdown(task, :brutal_kill) end)
-
     if state.owned?, do: close(state.pit, opts)
 
     :ok
   end
 
-  ## Private functions — one page
-
   defp page(response, size) do
     hits = get_in(response, ["hits", "hits"]) || []
 
-    # A short page is the last one, so a cursor stops without the extra request
+    # A short page is the last one, so the walk stops without the extra request
     # it would take to see an empty one.
     cursor = if hits != [] and length(hits) >= size, do: last_sort(hits), else: :done
 
@@ -268,18 +295,17 @@ defmodule Dowser.Elasticsearch.Streamer do
     {hits, cursor, response["pit_id"]}
   end
 
-  defp build(query, state, split, cursor) do
+  defp build(query, state) do
     query
     |> put_field(:pit, %{"id" => state.pit, "keep_alive" => state.keep_alive})
-    |> put_split(split)
-    |> put_search_after(cursor)
+    |> put_search_after(state.cursor)
   end
 
   defp last_sort(hits), do: hits |> List.last() |> Map.fetch!("sort")
 
   ## Private functions — the point in time
 
-  defp open(index, nil, keep_alive, opts) do
+  defp open(index, nil, _verify?, keep_alive, opts) do
     case Search.open_point_in_time(%{}, index, keep_alive, opts) do
       {:ok, %{"id" => pit_id}} ->
         {pit_id, true}
@@ -289,10 +315,14 @@ defmodule Dowser.Elasticsearch.Streamer do
     end
   end
 
+  defp open(_index, pit_id, false, _keep_alive, _opts) when is_binary(pit_id) do
+    {pit_id, false}
+  end
+
   # A point in time the caller already has may have expired since. One
   # match_none search is the cheapest way to find out, and failing here — with
   # Elasticsearch's own error — beats failing halfway through a walk.
-  defp open(_index, pit_id, _keep_alive, opts) when is_binary(pit_id) do
+  defp open(_index, pit_id, true, _keep_alive, opts) when is_binary(pit_id) do
     case Search.search(%{query: %{match_none: %{}}, pit: %{id: pit_id}}, opts) do
       {:ok, _response} ->
         {pit_id, false}
@@ -343,9 +373,6 @@ defmodule Dowser.Elasticsearch.Streamer do
     end)
   end
 
-  defp put_split(query, nil), do: query
-  defp put_split(query, %{} = slice), do: put_field(query, :slice, slice)
-
   defp put_search_after(query, :start), do: query
   defp put_search_after(query, cursor), do: put_field(query, :search_after, cursor)
 
@@ -377,30 +404,15 @@ defmodule Dowser.Elasticsearch.Streamer do
 
   ## Private functions — options
 
-  # Three shapes, one option: an integer or `{max, opts}` fans out over
-  # `0..max - 1`, a map is one slice taken verbatim, and nothing at all is one
-  # unsliced walk. `:id` and `:max` are computed here, so anything carrying
-  # them in `opts` loses.
-  defp split!(nil), do: [nil]
-  defp split!(1), do: [nil]
-
-  defp split!(max) when is_integer(max) and max > 1 do
-    Enum.map(0..(max - 1), &%{"id" => &1, "max" => max})
-  end
-
-  defp split!({max, slice_opts})
-       when is_integer(max) and max > 1 and (is_list(slice_opts) or is_map(slice_opts)) do
-    extra = Map.new(slice_opts, fn {key, value} -> {to_string(key), value} end)
-
-    Enum.map(0..(max - 1), &Map.merge(extra, %{"id" => &1, "max" => max}))
-  end
-
-  defp split!(%{} = slice), do: [slice]
-
-  defp split!(other) do
-    raise ArgumentError,
-          "invalid :slice #{inspect(other)}, expected a positive integer, a " <>
-            "{max, opts} tuple with max > 1, or a map holding one slice"
+  # `slice` is a search body field, like `size` and `sort`, and neither of those
+  # has an option either. It used to, though, so say so rather than ignoring it.
+  defp reject_slice_opt!(opts) do
+    if Keyword.has_key?(opts, :slice) do
+      raise ArgumentError,
+            "`slice` belongs in the query body, not the options — " <>
+              "%{query: ..., slice: %{id: 2, max: 8}}. To walk every slice at " <>
+              "once, see stream_with_slice/4."
+    end
   end
 
   defp shaper(opts) do
