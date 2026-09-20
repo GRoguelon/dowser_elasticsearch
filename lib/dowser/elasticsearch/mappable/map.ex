@@ -39,6 +39,18 @@ defimpl Dowser.Elasticsearch.Mappable, for: Map do
     value
   end
 
+  # A range object whose own mapping entry is in hand. The `"properties"`
+  # clause below catches a range that is a direct child of an object, but
+  # Elasticsearch lets any field hold an array, and a range reached through
+  # one arrives here with the field's entry as its mapping rather than the
+  # parent's. Without this it would fall through to the generic clause, which
+  # casts the keys and never calls `value_fn` — leaving `%{gte: _, lte: _}`
+  # where a `Date.Range` was expected.
+  def decode(%{"gte" => _, "lte" => _} = value, %{"type" => _} = mapping, _key_fn, value_fn)
+      when map_size(value) == 2 do
+    value_fn.(value, mapping)
+  end
+
   def decode(
         %{"_index" => <<_::binary>> = index, "_source" => %{}} = value,
         mapping_fn,

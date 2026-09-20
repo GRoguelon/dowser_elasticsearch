@@ -108,6 +108,12 @@ what changed, the guide says what to do about it.
 
 ### Fixed
 
+- A **range held in an array was never cast**. `date_range` and
+  `integer_range` were handled only where the range is a direct child of an
+  object; Elasticsearch lets any field hold an array, and a range reached
+  through one arrived at the generic map walker instead, which cast its keys
+  and never called the codec. The result was a `%{gte: _, lte: _}` map where
+  a `Date.Range` was expected.
 - Under `keys: :atoms`, the keys inside a `flattened` field — and inside an
   object mapped `"enabled": false` — were run through `String.to_atom/1`. The
   mapping enumerates none of those keys: they are whatever the document put

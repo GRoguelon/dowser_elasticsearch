@@ -305,6 +305,50 @@ defmodule Dowser.Elasticsearch.CodecTest do
     end
   end
 
+  describe "decode/2 — ranges inside an array" do
+    @range_mapping %{
+      "properties" => %{
+        "run" => %{"type" => "date_range", "format" => "strict_date"},
+        "runs" => %{"type" => "date_range", "format" => "strict_date"},
+        "counts" => %{"type" => "integer_range"}
+      }
+    }
+
+    test "a date_range held in an array is cast, like one held directly" do
+      HTTPStub.start_mapping_cacher!(@range_mapping)
+
+      body = %{
+        "_index" => "posts",
+        "_source" => %{
+          "run" => %{"gte" => "2026-08-01", "lte" => "2026-08-11"},
+          "runs" => [
+            %{"gte" => "2026-08-01", "lte" => "2026-08-11"},
+            %{"gte" => "2026-09-01", "lte" => "9999-12-31"}
+          ]
+        }
+      }
+
+      assert %{_source: %{run: run, runs: runs}} =
+               Codec.decode(body, decode_opts(key_fn: &String.to_atom/1))
+
+      assert run == Date.range(~D[2026-08-01], ~D[2026-08-11])
+
+      assert runs == [
+               Date.range(~D[2026-08-01], ~D[2026-08-11]),
+               Date.range(~D[2026-09-01], ~D[9999-12-31])
+             ]
+    end
+
+    test "an integer_range held in an array is cast too" do
+      HTTPStub.start_mapping_cacher!(@range_mapping)
+
+      body = %{"_index" => "posts", "_source" => %{"counts" => [%{"gte" => 1, "lte" => 10}]}}
+
+      assert %{_source: %{counts: [1..10]}} =
+               Codec.decode(body, decode_opts(key_fn: &String.to_atom/1))
+    end
+  end
+
   describe "decode/2 — a subtree the mapping declares opaque" do
     @opaque_mapping %{
       "properties" => %{
