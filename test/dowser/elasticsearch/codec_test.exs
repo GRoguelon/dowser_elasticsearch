@@ -11,10 +11,14 @@ defmodule Dowser.Elasticsearch.CodecTest do
     }
   }
 
-  @config Dowser.Client.Config.new(endpoint: "http://x:9200")
+  @context Dowser.Client.Context.new(endpoint: "http://x:9200")
 
-  defp opts(extra \\ []),
-    do: Keyword.merge([config: @config, key_fn: &Function.identity/1], extra)
+  defp context_opts(extra \\ []), do: Keyword.merge([context: @context], extra)
+
+  defp decode_opts(extra \\ []),
+    do: context_opts(Keyword.put_new(extra, :key_fn, &Function.identity/1))
+
+  doctest Dowser.Elasticsearch.Codec
 
   describe "load/2" do
     test "casts date strings and epoch millis to DateTime" do
@@ -32,6 +36,57 @@ defmodule Dowser.Elasticsearch.CodecTest do
              }) == ~U[2026-08-11 00:00:00.000Z]
     end
 
+    test "strict_date_optional_time casts every part it makes optional" do
+      field = %{"type" => "date"}
+
+      # The default format, with the fraction Elasticsearch treats as optional
+      # actually optional — and the offset, and the time itself.
+      assert Codec.load("2026-09-20T17:39:09.644Z", field) == ~U[2026-09-20 17:39:09.644Z]
+      assert Codec.load("2026-09-20T17:39:09Z", field) == ~U[2026-09-20 17:39:09Z]
+
+      assert Codec.load("2026-09-20T17:39:09.123456789Z", field) ==
+               ~U[2026-09-20 17:39:09.123456Z]
+
+      assert Codec.load("2026-09-20", field) == ~D[2026-09-20]
+
+      # An offset is normalized to UTC; no offset at all is read as UTC.
+      assert Codec.load("2026-09-20T12:39:09-05:00", field) == ~U[2026-09-20 17:39:09Z]
+      assert Codec.load("2026-09-20T17:39:09", field) == ~U[2026-09-20 17:39:09Z]
+    end
+
+    test "a declared format is read leniently, whatever precision the value has" do
+      # Elasticsearch writes to the declared precision but the index can hold
+      # values that predate the mapping, and elasticsearch_ex read these too.
+      strict = %{"type" => "date", "format" => "strict_date_time"}
+
+      assert Codec.load("2026-09-20T20:46:03Z", strict) == ~U[2026-09-20 20:46:03Z]
+      assert Codec.load("2026-09-20T20:46:03.899Z", strict) == ~U[2026-09-20 20:46:03.899Z]
+      assert Codec.load("2026-09-20T15:46:03-05:00", strict) == ~U[2026-09-20 20:46:03Z]
+
+      no_millis = %{"type" => "date", "format" => "strict_date_time_no_millis"}
+
+      assert Codec.load("2026-09-20T20:46:03.899Z", no_millis) == ~U[2026-09-20 20:46:03.899Z]
+
+      # A date-only format still only reads a date.
+      assert Codec.load("2026-09-20T20:46:03Z", %{"type" => "date", "format" => "strict_date"}) ==
+               "2026-09-20T20:46:03Z"
+    end
+
+    test "dumping keeps the precision the format declares" do
+      date_time = ~U[2026-09-20 20:46:03.899123Z]
+
+      assert Codec.dump(date_time, %{"type" => "date", "format" => "strict_date_time"}) ==
+               "2026-09-20T20:46:03.899Z"
+
+      assert Codec.dump(date_time, %{"type" => "date", "format" => "strict_date_time_no_millis"}) ==
+               "2026-09-20T20:46:03Z"
+    end
+
+    test "an unparseable date still passes through untouched" do
+      assert Codec.load("not a date", %{"type" => "date"}) == "not a date"
+      assert Codec.load("2026-13-45T99:99:99Z", %{"type" => "date"}) == "2026-13-45T99:99:99Z"
+    end
+
     test "casts ip strings to :inet tuples" do
       assert Codec.load("127.0.0.1", %{"type" => "ip"}) == {127, 0, 0, 1}
     end
@@ -41,7 +96,8 @@ defmodule Dowser.Elasticsearch.CodecTest do
     end
 
     test "casts geo_point objects to {lat, lon} tuples" do
-      assert Codec.load(%{"lat" => 1.2, "lon" => 3.4}, %{"type" => "geo_point"}) == {1.2, 3.4}
+      assert Codec.load(%{"lat" => 1.2, "lon" => 3.4}, %{"type" => "geo_point"}) ==
+               {1.2, 3.4}
     end
 
     test "casts date_range objects to Date.Range structs" do
@@ -92,7 +148,9 @@ defmodule Dowser.Elasticsearch.CodecTest do
 
     test "a mapping with no format defaults to Elasticsearch's own default (strict_date_optional_time||epoch_millis)" do
       assert Codec.dump(~D[2026-08-11], %{"type" => "date"}) == "2026-08-11"
-      assert Codec.dump(~U[2026-08-11 00:00:00Z], %{"type" => "date"}) == "2026-08-11T00:00:00Z"
+
+      assert Codec.dump(~U[2026-08-11 00:00:00Z], %{"type" => "date"}) ==
+               "2026-08-11T00:00:00Z"
     end
 
     test "dumps :inet tuples to strings" do
@@ -104,7 +162,8 @@ defmodule Dowser.Elasticsearch.CodecTest do
     end
 
     test "dumps {lat, lon} tuples to geo_point objects" do
-      assert Codec.dump({1.2, 3.4}, %{"type" => "geo_point"}) == %{"lat" => 1.2, "lon" => 3.4}
+      assert Codec.dump({1.2, 3.4}, %{"type" => "geo_point"}) ==
+               %{"lat" => 1.2, "lon" => 3.4}
     end
 
     test "dumps Date.Range structs to date_range objects" do
@@ -131,6 +190,59 @@ defmodule Dowser.Elasticsearch.CodecTest do
     end
   end
 
+  describe "a codec of your own" do
+    defmodule CustomCodec do
+      @behaviour Dowser.Elasticsearch.Codec
+
+      @impl true
+      def load(value, %{"type" => "scaled_float", "scaling_factor" => factor})
+          when is_integer(value) do
+        value / factor
+      end
+
+      # `date` is already handled by the built-in codec; matching it first
+      # replaces that cast.
+      def load(value, %{"type" => "date"}), do: {:raw, value}
+
+      def load(value, field), do: Dowser.Elasticsearch.Codec.load(value, field)
+
+      @impl true
+      def dump(value, %{"type" => "scaled_float", "scaling_factor" => factor})
+          when is_float(value) do
+        round(value * factor)
+      end
+
+      def dump(value, field), do: Dowser.Elasticsearch.Codec.dump(value, field)
+    end
+
+    test "a delegated type still uses the built-in codec" do
+      assert CustomCodec.load("127.0.0.1", %{"type" => "ip"}) == {127, 0, 0, 1}
+    end
+
+    test "an added type is cast by the new clause" do
+      field = %{"type" => "scaled_float", "scaling_factor" => 100}
+
+      assert CustomCodec.load(1234, field) == 12.34
+      assert CustomCodec.dump(12.34, field) == 1234
+    end
+
+    test "a clause over a built-in type replaces that cast" do
+      assert CustomCodec.load("2026-08-11", %{"type" => "date"}) == {:raw, "2026-08-11"}
+    end
+
+    test "delegating inherits the nil short-circuit and the identity fallback" do
+      assert CustomCodec.load(nil, %{"type" => "ip"}) == nil
+      assert CustomCodec.load("hello", %{"type" => "text"}) == "hello"
+    end
+  end
+
+  describe "a mapping entry with no type" do
+    test "falls back to identity in both directions" do
+      assert Codec.load("hello", nil) == "hello"
+      assert Codec.dump("hello", %{"properties" => %{}}) == "hello"
+    end
+  end
+
   describe "decode/2 — document found at any depth" do
     test "a bare document (Document.get/3 shape) is cast" do
       HTTPStub.start_mapping_cacher!(@mapping)
@@ -141,8 +253,8 @@ defmodule Dowser.Elasticsearch.CodecTest do
         "_source" => %{"published_at" => "2026-08-11T00:00:00.000Z"}
       }
 
-      assert {:ok, %{"_source" => %{"published_at" => ~U[2026-08-11 00:00:00.000Z]}}} =
-               Codec.decode(body, opts())
+      assert %{"_source" => %{"published_at" => ~U[2026-08-11 00:00:00.000Z]}} =
+               Codec.decode(body, decode_opts())
     end
 
     test "a document nested under hits.hits[] (search shape) is cast" do
@@ -161,8 +273,8 @@ defmodule Dowser.Elasticsearch.CodecTest do
         }
       }
 
-      assert {:ok, %{"hits" => %{"hits" => [%{"_source" => source}]}}} =
-               Codec.decode(body, opts())
+      assert %{"hits" => %{"hits" => [%{"_source" => source}]}} =
+               Codec.decode(body, decode_opts())
 
       assert source["published_at"] == ~U[2026-08-11 00:00:00.000Z]
     end
@@ -186,8 +298,8 @@ defmodule Dowser.Elasticsearch.CodecTest do
         ]
       }
 
-      assert {:ok, %{"responses" => [%{"hits" => %{"hits" => [%{"_source" => source}]}}]}} =
-               Codec.decode(body, opts())
+      assert %{"responses" => [%{"hits" => %{"hits" => [%{"_source" => source}]}}]} =
+               Codec.decode(body, decode_opts())
 
       assert source["published_at"] == ~U[2026-08-11 00:00:00.000Z]
     end
@@ -195,7 +307,7 @@ defmodule Dowser.Elasticsearch.CodecTest do
     test "different documents are cast against their own index's mapping" do
       other_mapping = %{"properties" => %{"ip" => %{"type" => "ip"}}}
 
-      fetch = fn _config, index ->
+      fetch = fn _context, index ->
         case index do
           "posts" -> {:ok, @mapping}
           "comments" -> {:ok, other_mapping}
@@ -212,8 +324,8 @@ defmodule Dowser.Elasticsearch.CodecTest do
         %{"_index" => "comments", "_source" => %{"ip" => "127.0.0.1"}}
       ]
 
-      assert {:ok, [%{"_source" => %{"published_at" => date}}, %{"_source" => %{"ip" => ip}}]} =
-               Codec.decode(body, opts())
+      assert [%{"_source" => %{"published_at" => date}}, %{"_source" => %{"ip" => ip}}] =
+               Codec.decode(body, decode_opts())
 
       assert date == ~U[2026-08-11 00:00:00.000Z]
       assert ip == {127, 0, 0, 1}
@@ -226,8 +338,8 @@ defmodule Dowser.Elasticsearch.CodecTest do
         "_source" => %{"published_at" => "2026-08-11T00:00:00.000Z"}
       }
 
-      assert {:ok, %{"_id" => "1", "_source" => %{"published_at" => "2026-08-11T00:00:00.000Z"}}} =
-               Codec.decode(body, opts())
+      assert %{"_id" => "1", "_source" => %{"published_at" => "2026-08-11T00:00:00.000Z"}} =
+               Codec.decode(body, decode_opts())
     end
 
     test "key_fn is applied throughout, including inside _source" do
@@ -239,8 +351,164 @@ defmodule Dowser.Elasticsearch.CodecTest do
         "_source" => %{"published_at" => "2026-08-11T00:00:00.000Z"}
       }
 
-      assert {:ok, %{_id: "1", _source: %{published_at: ~U[2026-08-11 00:00:00.000Z]}}} =
-               Codec.decode(body, opts(key_fn: &String.to_atom/1))
+      assert %{_id: "1", _source: %{published_at: ~U[2026-08-11 00:00:00.000Z]}} =
+               Codec.decode(body, decode_opts(key_fn: &String.to_atom/1))
+    end
+  end
+
+  describe "decode/2 — the rest of a hit's envelope" do
+    test "inner_hits keys follow the same :keys as the rest of the response" do
+      HTTPStub.start_mapping_cacher!(@mapping)
+
+      body = %{
+        "_index" => "posts",
+        "_id" => "1",
+        "_source" => %{"published_at" => "2026-08-11T00:00:00.000Z"},
+        "inner_hits" => %{
+          "alerts" => %{
+            "hits" => %{
+              "total" => %{"value" => 1, "relation" => "eq"},
+              "hits" => [%{"_id" => "a1", "_source" => %{"record_id" => "r1"}}]
+            }
+          }
+        }
+      }
+
+      assert %{inner_hits: inner_hits} =
+               Codec.decode(body, decode_opts(key_fn: &String.to_atom/1))
+
+      # Renaming only the outer key would leave a string-keyed map inside an
+      # otherwise atom-keyed response.
+      assert %{alerts: %{hits: %{total: %{value: 1}, hits: [hit]}}} = inner_hits
+      assert hit == %{_id: "a1", _source: %{record_id: "r1"}}
+    end
+
+    test "a hit's other envelope fields are keyed the same way" do
+      HTTPStub.start_mapping_cacher!(@mapping)
+
+      body = %{
+        "_index" => "posts",
+        "_source" => %{"published_at" => "2026-08-11T00:00:00.000Z"},
+        "sort" => ["a", 1],
+        "fields" => %{"title.keyword" => ["hi"]}
+      }
+
+      assert %{sort: ["a", 1], fields: %{"title.keyword": ["hi"]}} =
+               Codec.decode(body, decode_opts(key_fn: &String.to_atom/1))
+    end
+  end
+
+  describe "decode/2 — ranges inside an array" do
+    @range_mapping %{
+      "properties" => %{
+        "run" => %{"type" => "date_range", "format" => "strict_date"},
+        "runs" => %{"type" => "date_range", "format" => "strict_date"},
+        "counts" => %{"type" => "integer_range"}
+      }
+    }
+
+    test "a date_range held in an array is cast, like one held directly" do
+      HTTPStub.start_mapping_cacher!(@range_mapping)
+
+      body = %{
+        "_index" => "posts",
+        "_source" => %{
+          "run" => %{"gte" => "2026-08-01", "lte" => "2026-08-11"},
+          "runs" => [
+            %{"gte" => "2026-08-01", "lte" => "2026-08-11"},
+            %{"gte" => "2026-09-01", "lte" => "9999-12-31"}
+          ]
+        }
+      }
+
+      assert %{_source: %{run: run, runs: runs}} =
+               Codec.decode(body, decode_opts(key_fn: &String.to_atom/1))
+
+      assert run == Date.range(~D[2026-08-01], ~D[2026-08-11])
+
+      assert runs == [
+               Date.range(~D[2026-08-01], ~D[2026-08-11]),
+               Date.range(~D[2026-09-01], ~D[9999-12-31])
+             ]
+    end
+
+    test "an integer_range held in an array is cast too" do
+      HTTPStub.start_mapping_cacher!(@range_mapping)
+
+      body = %{"_index" => "posts", "_source" => %{"counts" => [%{"gte" => 1, "lte" => 10}]}}
+
+      assert %{_source: %{counts: [1..10]}} =
+               Codec.decode(body, decode_opts(key_fn: &String.to_atom/1))
+    end
+  end
+
+  describe "decode/2 — a subtree the mapping declares opaque" do
+    @opaque_mapping %{
+      "properties" => %{
+        "title" => %{"type" => "keyword"},
+        "roster" => %{"type" => "flattened"},
+        "stash" => %{"type" => "object", "enabled" => false}
+      }
+    }
+
+    test "a flattened field's keys are never run through key_fn" do
+      HTTPStub.start_mapping_cacher!(@opaque_mapping)
+
+      body = %{
+        "_index" => "posts",
+        "_source" => %{
+          "title" => "hi",
+          "roster" => %{"Managed Care Biller" => "Sam", "Division" => "WEST"}
+        }
+      }
+
+      assert %{_source: %{title: "hi", roster: roster}} =
+               Codec.decode(body, decode_opts(key_fn: &String.to_atom/1))
+
+      # The mapping enumerates `title`, so that key is safe to cast; it says
+      # nothing about what is inside `roster`, so those stay strings.
+      assert Map.keys(roster) |> Enum.sort() == ["Division", "Managed Care Biller"]
+    end
+
+    test "an object with enabled: false is left alone too" do
+      HTTPStub.start_mapping_cacher!(@opaque_mapping)
+
+      body = %{"_index" => "posts", "_source" => %{"stash" => %{"whatever" => "x"}}}
+
+      assert %{_source: %{stash: %{"whatever" => "x"}}} =
+               Codec.decode(body, decode_opts(key_fn: &String.to_atom/1))
+    end
+
+    test "creates no atoms, however many keys the document carries" do
+      HTTPStub.start_mapping_cacher!(@opaque_mapping)
+
+      body = %{
+        "_index" => "posts",
+        "_source" => %{"roster" => Map.new(1..200, &{"key_from_the_document_#{&1}", "v"})}
+      }
+
+      before = :erlang.system_info(:atom_count)
+      Codec.decode(body, decode_opts(key_fn: &String.to_atom/1))
+
+      assert :erlang.system_info(:atom_count) == before
+    end
+
+    test "values inside are not cast either — the mapping describes none of them" do
+      HTTPStub.start_mapping_cacher!(@opaque_mapping)
+
+      body = %{"_index" => "posts", "_source" => %{"roster" => %{"joined" => "2026-08-11"}}}
+
+      assert %{"_source" => %{"roster" => %{"joined" => "2026-08-11"}}} =
+               Codec.decode(body, decode_opts())
+    end
+
+    test "a list of flattened objects is left alone" do
+      HTTPStub.start_mapping_cacher!(@opaque_mapping)
+
+      body = %{"_index" => "posts", "_source" => %{"roster" => [%{"A B" => 1}, %{"C D" => 2}]}}
+
+      assert %{_source: %{roster: [%{"A B" => 1}, %{"C D" => 2}]}} =
+               Codec.decode(body, decode_opts(key_fn: &String.to_atom/1))
     end
   end
 
@@ -250,45 +518,104 @@ defmodule Dowser.Elasticsearch.CodecTest do
 
       body = %{"published_at" => "2026-08-11T00:00:00.000Z"}
 
-      assert {:ok, %{"published_at" => ~U[2026-08-11 00:00:00.000Z]}} =
-               Codec.decode(body, opts(source: true, index: "posts"))
+      assert %{"published_at" => ~U[2026-08-11 00:00:00.000Z]} =
+               Codec.decode(body, decode_opts(source: true, index: "posts"))
     end
   end
 
-  describe "encode/2 — a single document" do
-    test "dumps the whole body against opts[:index]'s mapping" do
+  describe "decode/2 — opts[:codec]" do
+    defmodule UpcaseCodec do
+      @behaviour Dowser.Elasticsearch.Codec
+
+      @impl true
+      def load(value, %{"type" => "text"}) when is_binary(value), do: String.upcase(value)
+      def load(value, field), do: Dowser.Elasticsearch.Codec.load(value, field)
+
+      @impl true
+      def dump(value, field), do: Dowser.Elasticsearch.Codec.dump(value, field)
+    end
+
+    test "values are cast through the given codec instead of the default" do
+      HTTPStub.start_mapping_cacher!(%{
+        "properties" => %{"title" => %{"type" => "text"}}
+      })
+
+      body = %{"_index" => "posts", "_source" => %{"title" => "hello"}}
+
+      assert %{"_source" => %{"title" => "HELLO"}} =
+               Codec.decode(body, decode_opts(codec: UpcaseCodec))
+
+      assert %{"_source" => %{"title" => "hello"}} = Codec.decode(body, decode_opts())
+    end
+  end
+
+  describe "encode/2" do
+    test "casts the source against opts[:index]'s mapping" do
       HTTPStub.start_mapping_cacher!(@mapping)
 
       document = %{"published_at" => ~U[2026-08-11 00:00:00Z]}
 
-      assert Codec.encode(document, opts(index: "posts")) ==
-               {:ok, %{"published_at" => "2026-08-11T00:00:00Z"}}
-    end
-
-    test "with opts[:doc_key], only that sub-key is dumped (Document.update/4 shape)" do
-      HTTPStub.start_mapping_cacher!(@mapping)
-
-      body = %{"doc" => %{"published_at" => ~U[2026-08-11 00:00:00Z]}}
-
-      assert Codec.encode(body, opts(index: "posts", doc_key: :doc)) ==
-               {:ok, %{"doc" => %{"published_at" => "2026-08-11T00:00:00Z"}}}
-    end
-
-    test "a %{script: ...} update body with no doc_key match passes through" do
-      HTTPStub.start_mapping_cacher!(@mapping)
-
-      body = %{"script" => %{"source" => "ctx._source.views++"}}
-
-      assert Codec.encode(body, opts(index: "posts", doc_key: :doc)) == {:ok, body}
+      assert Codec.encode(document, context_opts(index: "posts")) ==
+               %{"published_at" => "2026-08-11T00:00:00Z"}
     end
 
     test "no opts[:index] means no mapping — values pass through" do
       document = %{"published_at" => ~U[2026-08-11 00:00:00Z]}
-      assert Codec.encode(document, opts()) == {:ok, document}
+
+      assert Codec.encode(document, context_opts()) == document
+    end
+
+    test "with no mapping cacher running, values pass through" do
+      document = %{"published_at" => ~U[2026-08-11 00:00:00Z]}
+
+      assert Codec.encode(document, context_opts(index: "posts")) == document
+    end
+
+    defmodule DowncaseCodec do
+      @behaviour Dowser.Elasticsearch.Codec
+
+      @impl true
+      def load(value, field), do: Dowser.Elasticsearch.Codec.load(value, field)
+
+      @impl true
+      def dump(value, %{"type" => "text"}) when is_binary(value), do: String.downcase(value)
+      def dump(value, field), do: Dowser.Elasticsearch.Codec.dump(value, field)
+    end
+
+    test "opts[:codec] replaces the default codec" do
+      HTTPStub.start_mapping_cacher!(%{"properties" => %{"title" => %{"type" => "text"}}})
+
+      document = %{"title" => "HELLO"}
+
+      assert Codec.encode(document, context_opts(index: "posts", codec: DowncaseCodec)) ==
+               %{"title" => "hello"}
+
+      assert Codec.encode(document, context_opts(index: "posts")) == document
     end
   end
 
-  describe "encode/2 — bulk (Document.bulk/2 shape)" do
+  describe "encode/2 — a subtree the mapping declares opaque" do
+    test "a flattened source passes through untouched" do
+      HTTPStub.start_mapping_cacher!(%{
+        "properties" => %{
+          "published_at" => %{"type" => "date", "format" => "strict_date_optional_time"},
+          "roster" => %{"type" => "flattened"}
+        }
+      })
+
+      source = %{
+        "published_at" => ~U[2026-08-11 00:00:00Z],
+        "roster" => %{"Managed Care Biller" => "Sam"}
+      }
+
+      assert Codec.encode(source, context_opts(index: "posts")) == %{
+               "published_at" => "2026-08-11T00:00:00Z",
+               "roster" => %{"Managed Care Biller" => "Sam"}
+             }
+    end
+  end
+
+  describe "encode_bulk/3" do
     test "index/create/update actions are dumped, delete has no payload to dump" do
       HTTPStub.start_mapping_cacher!(@mapping)
 
@@ -300,14 +627,44 @@ defmodule Dowser.Elasticsearch.CodecTest do
         %{doc: %{published_at: ~U[2026-08-11 00:00:00Z]}}
       ]
 
-      assert {:ok,
-              [
-                %{index: %{_id: "1"}},
-                %{published_at: "2026-08-11T00:00:00Z"},
-                %{delete: %{_id: "2"}},
-                %{update: %{_id: "3"}},
-                %{doc: %{published_at: "2026-08-11T00:00:00Z"}}
-              ]} = Codec.encode(operations, opts(index: "posts"))
+      assert [
+               %{index: %{_id: "1"}},
+               %{published_at: "2026-08-11T00:00:00Z"},
+               %{delete: %{_id: "2"}},
+               %{update: %{_id: "3"}},
+               %{doc: %{published_at: "2026-08-11T00:00:00Z"}}
+             ] = encode_bulk(operations, index: "posts")
+    end
+
+    test "an update action's upsert source is dumped too" do
+      HTTPStub.start_mapping_cacher!(@mapping)
+
+      operations = [
+        %{"update" => %{"_id" => "1"}},
+        %{
+          "doc" => %{"published_at" => ~U[2026-08-11 00:00:00Z]},
+          "upsert" => %{"published_at" => ~U[2026-08-12 00:00:00Z]}
+        }
+      ]
+
+      assert [
+               _header,
+               %{
+                 "doc" => %{"published_at" => "2026-08-11T00:00:00Z"},
+                 "upsert" => %{"published_at" => "2026-08-12T00:00:00Z"}
+               }
+             ] = encode_bulk(operations, index: "posts")
+    end
+
+    test "a scripted update payload has nothing to dump" do
+      HTTPStub.start_mapping_cacher!(@mapping)
+
+      operations = [
+        %{"update" => %{"_id" => "1"}},
+        %{"script" => %{"source" => "ctx._source.views++"}}
+      ]
+
+      assert encode_bulk(operations, index: "posts") == operations
     end
 
     test "a per-action _index overrides the bulk-level default" do
@@ -315,7 +672,7 @@ defmodule Dowser.Elasticsearch.CodecTest do
 
       start_supervised!(
         {Dowser.Elasticsearch.MappingCacher,
-         fetch: fn _config, index ->
+         fetch: fn _context, index ->
            case index do
              "posts" -> {:ok, @mapping}
              "comments" -> {:ok, other_mapping}
@@ -328,8 +685,11 @@ defmodule Dowser.Elasticsearch.CodecTest do
         %{"ip" => {127, 0, 0, 1}}
       ]
 
-      assert {:ok, [_header, %{"ip" => "127.0.0.1"}]} =
-               Codec.encode(operations, opts(index: "posts"))
+      assert [_header, %{"ip" => "127.0.0.1"}] = encode_bulk(operations, index: "posts")
     end
+  end
+
+  defp encode_bulk(operations, extra) do
+    Codec.encode_bulk(operations, &Codec.encode/2, context_opts(extra))
   end
 end

@@ -1,15 +1,15 @@
-defmodule Dowser.Elasticsearch.Fields.GeoPoint do
+defmodule Dowser.Elasticsearch.Codec.GeoPoint do
   @moduledoc """
   `geo_point` — the `%{"lat" => _, "lon" => _}` object form <-> a `{lat, lon}`
   tuple.
 
   Other Elasticsearch forms (string `"lat,lon"`, `[lon, lat]`, geohash) pass
-  through untouched — cast your own field over `geo_point` to handle them.
+  through untouched — write your own codec over `geo_point` to handle them.
   """
 
-  @behaviour Dowser.Client.Field
+  @behaviour Dowser.Elasticsearch.Codec
 
-  @impl Dowser.Client.Field
+  @impl true
   def load(%{"lat" => lat, "lon" => lon}, _field) do
     {lat, lon}
   end
@@ -18,7 +18,7 @@ defmodule Dowser.Elasticsearch.Fields.GeoPoint do
     value
   end
 
-  @impl Dowser.Client.Field
+  @impl true
   def dump({lat, lon}, _field) do
     %{"lat" => lat, "lon" => lon}
   end

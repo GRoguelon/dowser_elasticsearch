@@ -5,7 +5,7 @@ defmodule Dowser.Elasticsearch.IndexTest do
   alias Dowser.Elasticsearch.HTTPStub
   alias Dowser.Elasticsearch.Index
 
-  defp config(port), do: HTTPStub.config(port)
+  defp context(port), do: HTTPStub.context(port)
   defp start_server(response \\ HTTPStub.ok_response()), do: HTTPStub.start_server(response)
 
   describe "segment/1" do
@@ -32,7 +32,7 @@ defmodule Dowser.Elasticsearch.IndexTest do
 
       assert {:ok, _} =
                Index.create_index(%{"settings" => %{"number_of_shards" => 1}}, "posts",
-                 config: config(port)
+                 context: context(port)
                )
 
       req = Task.await(server)
@@ -44,7 +44,7 @@ defmodule Dowser.Elasticsearch.IndexTest do
     test "create_index/3 PUTs an empty object when there is nothing to send" do
       {port, server} = start_server()
 
-      assert {:ok, _} = Index.create_index(%{}, "posts", config: config(port))
+      assert {:ok, _} = Index.create_index(%{}, "posts", context: context(port))
 
       req = Task.await(server)
       assert req.method == "PUT"
@@ -60,7 +60,7 @@ defmodule Dowser.Elasticsearch.IndexTest do
     test "delete_index/2 DELETEs /{index}" do
       {port, server} = start_server()
 
-      assert {:ok, _} = Index.delete_index("posts", config: config(port))
+      assert {:ok, _} = Index.delete_index("posts", context: context(port))
 
       req = Task.await(server)
       assert req.method == "DELETE"
@@ -70,7 +70,7 @@ defmodule Dowser.Elasticsearch.IndexTest do
     test "get_index/2 GETs /{index}" do
       {port, server} = start_server()
 
-      assert {:ok, _} = Index.get_index(["posts", "comments"], config: config(port))
+      assert {:ok, _} = Index.get_index(["posts", "comments"], context: context(port))
 
       req = Task.await(server)
       assert req.method == "GET"
@@ -79,28 +79,28 @@ defmodule Dowser.Elasticsearch.IndexTest do
 
     test "index_exists/2 HEADs /{index} and returns result tuples" do
       {port, server} = start_server(HTTPStub.head_response(200))
-      assert {:ok, true} = Index.index_exists("posts", config: config(port))
+      assert {:ok, true} = Index.index_exists("posts", context: context(port))
       assert Task.await(server).method == "HEAD"
 
       {port, server} = start_server(HTTPStub.head_response(404))
-      assert {:ok, false} = Index.index_exists("posts", config: config(port))
+      assert {:ok, false} = Index.index_exists("posts", context: context(port))
       Task.await(server)
     end
 
     test "index_exists?/2 returns the bare boolean" do
       {port, server} = start_server(HTTPStub.head_response(200))
-      assert Index.index_exists?("posts", config: config(port)) == true
+      assert Index.index_exists?("posts", context: context(port)) == true
       Task.await(server)
 
       {port, server} = start_server(HTTPStub.head_response(404))
-      assert Index.index_exists?("posts", config: config(port)) == false
+      assert Index.index_exists?("posts", context: context(port)) == false
       Task.await(server)
     end
 
     test "open/2 POSTs /{index}/_open with an empty body" do
       {port, server} = start_server()
 
-      assert {:ok, _} = Index.open("posts", config: config(port))
+      assert {:ok, _} = Index.open("posts", context: context(port))
 
       req = Task.await(server)
       assert req.method == "POST"
@@ -111,14 +111,14 @@ defmodule Dowser.Elasticsearch.IndexTest do
     test "close/2 POSTs /{index}/_close" do
       {port, server} = start_server()
 
-      assert {:ok, _} = Index.close("posts", config: config(port))
+      assert {:ok, _} = Index.close("posts", context: context(port))
       assert Task.await(server).path == "/posts/_close"
     end
 
     test "add_block/3 PUTs /{index}/_block/{block}" do
       {port, server} = start_server()
 
-      assert {:ok, _} = Index.add_block("posts", "write", config: config(port))
+      assert {:ok, _} = Index.add_block("posts", "write", context: context(port))
 
       req = Task.await(server)
       assert req.method == "PUT"
@@ -128,7 +128,7 @@ defmodule Dowser.Elasticsearch.IndexTest do
     test "remove_block/3 DELETEs /{index}/_block/{block}" do
       {port, server} = start_server()
 
-      assert {:ok, _} = Index.remove_block("posts", :write, config: config(port))
+      assert {:ok, _} = Index.remove_block("posts", :write, context: context(port))
 
       req = Task.await(server)
       assert req.method == "DELETE"
@@ -141,7 +141,7 @@ defmodule Dowser.Elasticsearch.IndexTest do
       {port, server} = start_server()
 
       assert {:ok, _} =
-               Index.put_mapping(%{"properties" => %{}}, "posts", config: config(port))
+               Index.put_mapping(%{"properties" => %{}}, "posts", context: context(port))
 
       req = Task.await(server)
       assert req.method == "POST"
@@ -151,11 +151,11 @@ defmodule Dowser.Elasticsearch.IndexTest do
 
     test "get_mapping/1 GETs /_mapping or /{index}/_mapping" do
       {port, server} = start_server()
-      assert {:ok, _} = Index.get_mapping(config: config(port))
+      assert {:ok, _} = Index.get_mapping(context: context(port))
       assert Task.await(server).path == "/_mapping"
 
       {port, server} = start_server()
-      assert {:ok, _} = Index.get_mapping(index: "posts", config: config(port))
+      assert {:ok, _} = Index.get_mapping(index: "posts", context: context(port))
       assert Task.await(server).path == "/posts/_mapping"
     end
 
@@ -163,7 +163,7 @@ defmodule Dowser.Elasticsearch.IndexTest do
       {port, server} = start_server()
 
       assert {:ok, _} =
-               Index.get_field_mapping([:title, :body], index: "posts", config: config(port))
+               Index.get_field_mapping([:title, :body], index: "posts", context: context(port))
 
       assert Task.await(server).path == "/posts/_mapping/field/title,body"
     end
@@ -176,7 +176,7 @@ defmodule Dowser.Elasticsearch.IndexTest do
       assert {:ok, _} =
                Index.put_settings(%{"index" => %{"number_of_replicas" => 2}},
                  index: "posts",
-                 config: config(port)
+                 context: context(port)
                )
 
       req = Task.await(server)
@@ -188,7 +188,7 @@ defmodule Dowser.Elasticsearch.IndexTest do
       {port, server} = start_server()
 
       assert {:ok, _} =
-               Index.get_settings(index: "posts", name: "index.blocks.*", config: config(port))
+               Index.get_settings(index: "posts", name: "index.blocks.*", context: context(port))
 
       assert Task.await(server).path == "/posts/_settings/index.blocks.*"
     end
@@ -199,7 +199,7 @@ defmodule Dowser.Elasticsearch.IndexTest do
       {port, server} = start_server()
 
       actions = [%{"add" => %{"index" => "posts", "alias" => "blog"}}]
-      assert {:ok, _} = Index.update_aliases(actions, config: config(port))
+      assert {:ok, _} = Index.update_aliases(actions, context: context(port))
 
       req = Task.await(server)
       assert req.method == "POST"
@@ -210,7 +210,7 @@ defmodule Dowser.Elasticsearch.IndexTest do
     test "put_alias/4 POSTs /{index}/_aliases/{name}" do
       {port, server} = start_server()
 
-      assert {:ok, _} = Index.put_alias(%{}, "posts", "blog", config: config(port))
+      assert {:ok, _} = Index.put_alias(%{}, "posts", "blog", context: context(port))
 
       req = Task.await(server)
       assert req.method == "POST"
@@ -220,7 +220,7 @@ defmodule Dowser.Elasticsearch.IndexTest do
     test "delete_alias/3 DELETEs /{index}/_aliases/{name}" do
       {port, server} = start_server()
 
-      assert {:ok, _} = Index.delete_alias("posts", "blog", config: config(port))
+      assert {:ok, _} = Index.delete_alias("posts", "blog", context: context(port))
 
       req = Task.await(server)
       assert req.method == "DELETE"
@@ -229,18 +229,18 @@ defmodule Dowser.Elasticsearch.IndexTest do
 
     test "get_alias/1 GETs the /_alias variants" do
       {port, server} = start_server()
-      assert {:ok, _} = Index.get_alias(config: config(port))
+      assert {:ok, _} = Index.get_alias(context: context(port))
       assert Task.await(server).path == "/_alias"
 
       {port, server} = start_server()
-      assert {:ok, _} = Index.get_alias(index: "posts", name: "blog", config: config(port))
+      assert {:ok, _} = Index.get_alias(index: "posts", name: "blog", context: context(port))
       assert Task.await(server).path == "/posts/_alias/blog"
     end
 
     test "alias_exists/2 HEADs /_alias/{name}" do
       {port, server} = start_server(HTTPStub.head_response(200))
 
-      assert {:ok, true} = Index.alias_exists("blog", config: config(port))
+      assert {:ok, true} = Index.alias_exists("blog", context: context(port))
 
       req = Task.await(server)
       assert req.method == "HEAD"
@@ -254,7 +254,7 @@ defmodule Dowser.Elasticsearch.IndexTest do
 
       assert {:ok, _} =
                Index.put_index_template(%{"index_patterns" => ["posts-*"]}, "tpl",
-                 config: config(port)
+                 context: context(port)
                )
 
       req = Task.await(server)
@@ -266,28 +266,28 @@ defmodule Dowser.Elasticsearch.IndexTest do
     test "get_index_template/2 GETs /_index_template/{name}" do
       {port, server} = start_server()
 
-      assert {:ok, _} = Index.get_index_template("tpl", config: config(port))
+      assert {:ok, _} = Index.get_index_template("tpl", context: context(port))
       assert Task.await(server).path == "/_index_template/tpl"
     end
 
     test "delete_index_template/2 DELETEs /_index_template/{name}" do
       {port, server} = start_server()
 
-      assert {:ok, _} = Index.delete_index_template("tpl", config: config(port))
+      assert {:ok, _} = Index.delete_index_template("tpl", context: context(port))
       assert Task.await(server).method == "DELETE"
     end
 
     test "index_template_exists/2 HEADs /_index_template/{name}" do
       {port, server} = start_server(HTTPStub.head_response(404))
 
-      assert {:ok, false} = Index.index_template_exists("tpl", config: config(port))
+      assert {:ok, false} = Index.index_template_exists("tpl", context: context(port))
       assert Task.await(server).path == "/_index_template/tpl"
     end
 
     test "simulate_index_template/3 POSTs /_index_template/_simulate_index/{name}" do
       {port, server} = start_server()
 
-      assert {:ok, _} = Index.simulate_index_template(%{}, "posts", config: config(port))
+      assert {:ok, _} = Index.simulate_index_template(%{}, "posts", context: context(port))
       assert Task.await(server).path == "/_index_template/_simulate_index/posts"
     end
 
@@ -296,7 +296,7 @@ defmodule Dowser.Elasticsearch.IndexTest do
 
       assert {:ok, _} =
                Index.simulate_template(%{"index_patterns" => ["posts-*"]}, "tpl",
-                 config: config(port)
+                 context: context(port)
                )
 
       req = Task.await(server)
@@ -310,7 +310,7 @@ defmodule Dowser.Elasticsearch.IndexTest do
       {port, server} = start_server()
 
       assert {:ok, _} =
-               Index.put_component_template(%{"template" => %{}}, "ct", config: config(port))
+               Index.put_component_template(%{"template" => %{}}, "ct", context: context(port))
 
       req = Task.await(server)
       assert req.method == "POST"
@@ -320,28 +320,28 @@ defmodule Dowser.Elasticsearch.IndexTest do
     test "get_component_template/2 GETs /_component_template/{name}" do
       {port, server} = start_server()
 
-      assert {:ok, _} = Index.get_component_template("ct", config: config(port))
+      assert {:ok, _} = Index.get_component_template("ct", context: context(port))
       assert Task.await(server).path == "/_component_template/ct"
     end
 
     test "delete_component_template/2 DELETEs /_component_template/{name}" do
       {port, server} = start_server()
 
-      assert {:ok, _} = Index.delete_component_template("ct", config: config(port))
+      assert {:ok, _} = Index.delete_component_template("ct", context: context(port))
       assert Task.await(server).method == "DELETE"
     end
 
     test "component_template_exists/2 HEADs /_component_template/{name}" do
       {port, server} = start_server(HTTPStub.head_response(200))
 
-      assert {:ok, true} = Index.component_template_exists("ct", config: config(port))
+      assert {:ok, true} = Index.component_template_exists("ct", context: context(port))
       Task.await(server)
     end
 
     test "template_exists/2 HEADs /_template/{name}" do
       {port, server} = start_server(HTTPStub.head_response(200))
 
-      assert {:ok, true} = Index.template_exists("tpl", config: config(port))
+      assert {:ok, true} = Index.template_exists("tpl", context: context(port))
       assert Task.await(server).path == "/_template/tpl"
     end
   end
@@ -350,7 +350,7 @@ defmodule Dowser.Elasticsearch.IndexTest do
     test "clone/4 POSTs /{index}/_clone/{target}" do
       {port, server} = start_server()
 
-      assert {:ok, _} = Index.clone(%{}, "posts", "posts2", config: config(port))
+      assert {:ok, _} = Index.clone(%{}, "posts", "posts2", context: context(port))
       assert Task.await(server).path == "/posts/_clone/posts2"
     end
 
@@ -359,7 +359,7 @@ defmodule Dowser.Elasticsearch.IndexTest do
 
       assert {:ok, _} =
                Index.shrink(%{"settings" => %{"index.number_of_shards" => 1}}, "posts", "posts2",
-                 config: config(port)
+                 context: context(port)
                )
 
       req = Task.await(server)
@@ -370,19 +370,19 @@ defmodule Dowser.Elasticsearch.IndexTest do
     test "split/4 POSTs /{index}/_split/{target}" do
       {port, server} = start_server()
 
-      assert {:ok, _} = Index.split(%{}, "posts", "posts2", config: config(port))
+      assert {:ok, _} = Index.split(%{}, "posts", "posts2", context: context(port))
       assert Task.await(server).path == "/posts/_split/posts2"
     end
 
     test "rollover/3 POSTs /{target}/_rollover, with an optional new index" do
       {port, server} = start_server()
-      assert {:ok, _} = Index.rollover(%{}, "blog", config: config(port))
+      assert {:ok, _} = Index.rollover(%{}, "blog", context: context(port))
       assert Task.await(server).path == "/blog/_rollover"
 
       {port, server} = start_server()
 
       assert {:ok, _} =
-               Index.rollover(%{}, "blog", new_index: "posts-000002", config: config(port))
+               Index.rollover(%{}, "blog", new_index: "posts-000002", context: context(port))
 
       assert Task.await(server).path == "/blog/_rollover/posts-000002"
     end
@@ -392,7 +392,7 @@ defmodule Dowser.Elasticsearch.IndexTest do
     test "refresh/1 GETs /{index}/_refresh" do
       {port, server} = start_server()
 
-      assert {:ok, _} = Index.refresh(index: "posts", config: config(port))
+      assert {:ok, _} = Index.refresh(index: "posts", context: context(port))
 
       req = Task.await(server)
       assert req.method == "GET"
@@ -402,14 +402,14 @@ defmodule Dowser.Elasticsearch.IndexTest do
     test "flush/1 GETs /_flush" do
       {port, server} = start_server()
 
-      assert {:ok, _} = Index.flush(config: config(port))
+      assert {:ok, _} = Index.flush(context: context(port))
       assert Task.await(server).path == "/_flush"
     end
 
     test "forcemerge/1 POSTs /_forcemerge with an empty body" do
       {port, server} = start_server()
 
-      assert {:ok, _} = Index.forcemerge(config: config(port))
+      assert {:ok, _} = Index.forcemerge(context: context(port))
 
       req = Task.await(server)
       assert req.method == "POST"
@@ -420,7 +420,7 @@ defmodule Dowser.Elasticsearch.IndexTest do
     test "clear_cache/1 POSTs /{index}/_cache/clear" do
       {port, server} = start_server()
 
-      assert {:ok, _} = Index.clear_cache(index: "posts", config: config(port))
+      assert {:ok, _} = Index.clear_cache(index: "posts", context: context(port))
       assert Task.await(server).path == "/posts/_cache/clear"
     end
   end
@@ -428,13 +428,13 @@ defmodule Dowser.Elasticsearch.IndexTest do
   describe "monitoring" do
     test "stats/1 GETs the /_stats variants" do
       {port, server} = start_server()
-      assert {:ok, _} = Index.stats(config: config(port))
+      assert {:ok, _} = Index.stats(context: context(port))
       assert Task.await(server).path == "/_stats"
 
       {port, server} = start_server()
 
       assert {:ok, _} =
-               Index.stats(index: "posts", metric: [:docs, :store], config: config(port))
+               Index.stats(index: "posts", metric: [:docs, :store], context: context(port))
 
       assert Task.await(server).path == "/posts/_stats/docs,store"
     end
@@ -442,21 +442,21 @@ defmodule Dowser.Elasticsearch.IndexTest do
     test "segments/1 GETs /{index}/_segments" do
       {port, server} = start_server()
 
-      assert {:ok, _} = Index.segments(index: "posts", config: config(port))
+      assert {:ok, _} = Index.segments(index: "posts", context: context(port))
       assert Task.await(server).path == "/posts/_segments"
     end
 
     test "recovery/1 GETs /{index}/_recovery" do
       {port, server} = start_server()
 
-      assert {:ok, _} = Index.recovery(index: "posts", config: config(port))
+      assert {:ok, _} = Index.recovery(index: "posts", context: context(port))
       assert Task.await(server).path == "/posts/_recovery"
     end
 
     test "shard_stores/1 GETs /{index}/_shard_stores" do
       {port, server} = start_server()
 
-      assert {:ok, _} = Index.shard_stores(index: "posts", config: config(port))
+      assert {:ok, _} = Index.shard_stores(index: "posts", context: context(port))
       assert Task.await(server).path == "/posts/_shard_stores"
     end
 
@@ -466,7 +466,7 @@ defmodule Dowser.Elasticsearch.IndexTest do
       assert {:ok, _} =
                Index.disk_usage("posts",
                  params: [run_expensive_tasks: true],
-                 config: config(port)
+                 context: context(port)
                )
 
       req = Task.await(server)
@@ -477,7 +477,7 @@ defmodule Dowser.Elasticsearch.IndexTest do
     test "field_usage_stats/2 GETs /{index}/_field_usage_stats" do
       {port, server} = start_server()
 
-      assert {:ok, _} = Index.field_usage_stats("posts", config: config(port))
+      assert {:ok, _} = Index.field_usage_stats("posts", context: context(port))
       assert Task.await(server).path == "/posts/_field_usage_stats"
     end
   end
@@ -487,7 +487,7 @@ defmodule Dowser.Elasticsearch.IndexTest do
       {port, server} = start_server()
 
       assert {:ok, _} =
-               Index.analyze(%{"analyzer" => "standard", "text" => "hi"}, config: config(port))
+               Index.analyze(%{"analyzer" => "standard", "text" => "hi"}, context: context(port))
 
       req = Task.await(server)
       assert req.method == "POST"
@@ -501,7 +501,7 @@ defmodule Dowser.Elasticsearch.IndexTest do
       assert {:ok, _} =
                Index.validate_query(%{"query" => %{"match_all" => %{}}},
                  index: "posts",
-                 config: config(port)
+                 context: context(port)
                )
 
       req = Task.await(server)
@@ -512,7 +512,7 @@ defmodule Dowser.Elasticsearch.IndexTest do
     test "reload_search_analyzers/2 POSTs /{index}/_reload_search_analyzers" do
       {port, server} = start_server()
 
-      assert {:ok, _} = Index.reload_search_analyzers("posts", config: config(port))
+      assert {:ok, _} = Index.reload_search_analyzers("posts", context: context(port))
       assert Task.await(server).path == "/posts/_reload_search_analyzers"
     end
   end
@@ -521,7 +521,7 @@ defmodule Dowser.Elasticsearch.IndexTest do
     test "list_dangling_indices/1 GETs /_dangling" do
       {port, server} = start_server()
 
-      assert {:ok, _} = Index.list_dangling_indices(config: config(port))
+      assert {:ok, _} = Index.list_dangling_indices(context: context(port))
 
       req = Task.await(server)
       assert req.method == "GET"
@@ -534,7 +534,7 @@ defmodule Dowser.Elasticsearch.IndexTest do
       assert {:ok, _} =
                Index.import_dangling_index("uuid-1",
                  params: [accept_data_loss: true],
-                 config: config(port)
+                 context: context(port)
                )
 
       req = Task.await(server)
@@ -548,7 +548,7 @@ defmodule Dowser.Elasticsearch.IndexTest do
       assert {:ok, _} =
                Index.delete_dangling_index("uuid-1",
                  params: [accept_data_loss: true],
-                 config: config(port)
+                 context: context(port)
                )
 
       req = Task.await(server)
@@ -561,7 +561,7 @@ defmodule Dowser.Elasticsearch.IndexTest do
     test "resolve_index/2 GETs /_resolve/index/{name}" do
       {port, server} = start_server()
 
-      assert {:ok, _} = Index.resolve_index("posts-*", config: config(port))
+      assert {:ok, _} = Index.resolve_index("posts-*", context: context(port))
 
       req = Task.await(server)
       assert req.method == "GET"
@@ -571,14 +571,14 @@ defmodule Dowser.Elasticsearch.IndexTest do
     test "resolve_cluster/2 GETs /_resolve/cluster/{name}" do
       {port, server} = start_server()
 
-      assert {:ok, _} = Index.resolve_cluster("remote1:*", config: config(port))
+      assert {:ok, _} = Index.resolve_cluster("remote1:*", context: context(port))
       assert Task.await(server).path == "/_resolve/cluster/remote1:*"
     end
 
     test "delete_data_lifecycle/2 DELETEs /_data_stream/{name}/_lifecycle" do
       {port, server} = start_server()
 
-      assert {:ok, _} = Index.delete_data_lifecycle("logs", config: config(port))
+      assert {:ok, _} = Index.delete_data_lifecycle("logs", context: context(port))
 
       req = Task.await(server)
       assert req.method == "DELETE"

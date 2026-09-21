@@ -1,191 +1,333 @@
 defmodule Dowser.Elasticsearch.Codec do
   @moduledoc """
   Casts Elasticsearch documents and search results to and from native Elixir
-  terms, based on each document's own index mapping — a `Dowser.Client.Codec`
-  implementation, set as `:codec_adapter` (see `Dowser.Client`):
+  terms, based on each document's own index mapping — a `Dowser.Client`
+  `:decoder` *and* `:encoder`:
 
-      Dowser.Client.Config.new(
-        endpoint: "http://localhost:9200",
-        codec_adapter: Dowser.Elasticsearch.Codec
-      )
+      config :dowser_client,
+        contexts: [
+          default: [
+            endpoint: "http://localhost:9200",
+            decoder: Dowser.Elasticsearch.Codec,
+            encoder: Dowser.Elasticsearch.Codec
+          ]
+        ]
 
   Once configured, every API function in `Dowser.Elasticsearch.Document` and
   `Dowser.Elasticsearch.Search` casts automatically — no per-call option
   needed. Mappings are fetched (and cached) through
   `Dowser.Elasticsearch.MappingCacher`.
 
+  The module works at two levels, and its two pairs of functions say which:
+
+    * `decode/2` and `encode/2` take a **whole body**, and are what
+      `dowser_client` calls.
+    * `load/2` and `dump/2` take **one value** and the mapping entry that
+      describes it, and are what the body pass dispatches into, field by
+      field. They are also this module's behaviour.
+
   ## decode/2
 
   Finds and casts every document in a response body, at any nesting depth:
-  a bare document (`Document.get/3`), `hits.hits[]` (`Search.search/2`),
-  `responses[].hits.hits[]` (`Search.msearch/2`), and so on — each hit's own
-  `_index` selects its mapping, so mixed-index results (e.g. `msearch/2`
-  across different indices) are cast correctly. `opts[:source]`, alongside
-  `opts[:index]`, casts a bare `_source` document with no `_index` of its own
-  (`Document.get_source/3`).
+  a bare document (`Dowser.Elasticsearch.Document.get/3`), `hits.hits[]`
+  (`Dowser.Elasticsearch.Search.search/2`), `responses[].hits.hits[]`
+  (`Dowser.Elasticsearch.Search.msearch/2`), and so on — each hit's own
+  `_index` selects its mapping, so mixed-index results are cast correctly.
 
-  If no mapping can be found for a document's index (no `Dowser.Elasticsearch.MappingCacher`
-  running, or the fetch fails), its values pass through unchanged; keys are
-  still cast per `opts[:key_fn]`.
+  If no mapping can be found for a document's index (no
+  `Dowser.Elasticsearch.MappingCacher` running, or the fetch fails), its values
+  pass through unchanged; keys are still cast per `opts[:key_fn]`.
+
+  ### Subtrees the mapping declares opaque
+
+  A `flattened` field, and an object mapped `"enabled": false`, hold whatever
+  the document put in them — the mapping enumerates none of it. Both are
+  returned exactly as they arrived: values uncast, and keys left as strings
+  rather than run through `opts[:key_fn]`.
+
+  That last part matters under `keys: :atoms`. Atoms are never garbage
+  collected and the table is capped (`:erlang.system_info(:atom_limit)`, a
+  little over a million by default); atomizing keys that come from document
+  content rather than from the mapping turns any writer into a way to exhaust
+  it and bring the node down. A mapped field's name is one of a finite set, so
+  casting it is safe; a `flattened` field's keys are not.
+
+  A mixed result is the price: `%{title: "hi", roster: %{"Managed Care Biller"
+  => "Sam"}}`. The alternative is a cast that is unsafe by construction.
+
+  Note that this is narrower than the whole risk. `keys: :atoms` also casts
+  keys the mapping simply doesn't mention — an unmapped field under
+  `"dynamic": false`, or one added since the mapping was cached. Where a body
+  is wholly untrusted, `keys: :atoms!` (`String.to_existing_atom/1`) is the
+  option that cannot grow the table at all.
 
   ## encode/2
 
-  Casts a request body against `opts[:index]`'s mapping — a no-op when
-  `opts[:index]` is absent. `opts[:doc_key]` casts only that sub-key instead
-  of the whole body (`Document.update/4`'s `%{doc: ...}` shape). A list body
-  is treated as a `Document.bulk/2` NDJSON action list: `index`/`create`
-  actions cast their whole payload, `update` actions cast only `doc`, and
-  `delete` actions (which carry no payload) are left alone; a per-action
-  `_index` overrides `opts[:index]`.
+  Casts one **document source** against the mapping of `opts[:index]` — never a
+  query. `dowser_client` only hands an encoder a source, because a query value
+  has no mapping entry to anchor it: the same value can appear in a range
+  clause, a script parameter or an aggregation boundary, each wanting a
+  different shape. Build queries in the shape Elasticsearch expects.
 
-  ## Field-level casting
+  `encode_bulk/3` is the exception to one-source-at-a-time: a bulk payload is
+  cast against the index named on the action line above it, which no per-line
+  pass can see.
 
-  Per-field casting is dispatched via `load/2`/`dump/2`, built with
-  `Dowser.Client.Codec.Builder` from the table below. Only the field types
-  JSON can't natively represent are cast; any other mapping entry — and
-  `nil` values — fall back to identity.
+  ## load/2 and dump/2
 
-  | mapping type           | field                                    | Elixir term    |
-  | ----------------------- | ----------------------------------------- | -------------- |
-  | `date`, `date_nanos`   | `Dowser.Elasticsearch.Fields.Date`       | `DateTime`     |
-  | `date_range`           | `Dowser.Elasticsearch.Fields.DateRange`  | `Date.Range`   |
-  | `integer_range`        | `Dowser.Elasticsearch.Fields.Range`      | `Range`        |
-  | `ip`                   | `Dowser.Elasticsearch.Fields.IP`         | `:inet` tuple  |
-  | `binary`               | `Dowser.Elasticsearch.Fields.Binary`     | raw binary     |
-  | `geo_point`            | `Dowser.Elasticsearch.Fields.GeoPoint`   | `{lat, lon}`   |
+  The mapping entry's `"type"` selects the field codec that handles it; only
+  the types JSON can't natively represent are cast, and any other entry — like
+  a `nil` value — falls back to identity.
 
-  ## Custom codecs
+  | mapping type           | field codec                              | Elixir term    |
+  | ---------------------- | ---------------------------------------- | -------------- |
+  | `date`, `date_nanos`   | `Dowser.Elasticsearch.Codec.Date`        | `DateTime`     |
+  | `date_range`           | `Dowser.Elasticsearch.Codec.DateRange`   | `Date.Range`   |
+  | `integer_range`        | `Dowser.Elasticsearch.Codec.Range`       | `Range`        |
+  | `ip`                   | `Dowser.Elasticsearch.Codec.IP`          | `:inet` tuple  |
+  | `binary`               | `Dowser.Elasticsearch.Codec.Binary`      | raw binary     |
+  | `geo_point`            | `Dowser.Elasticsearch.Codec.GeoPoint`    | `{lat, lon}`   |
 
-  Add field types by inheriting the built-in casts:
+      iex> Dowser.Elasticsearch.Codec.load("127.0.0.1", %{"type" => "ip"})
+      {127, 0, 0, 1}
+
+      iex> Dowser.Elasticsearch.Codec.dump({127, 0, 0, 1}, %{"type" => "ip"})
+      "127.0.0.1"
+
+  ## The behaviour
+
+  `load/2` and `dump/2` are the callbacks each field codec in the table
+  implements: two functions over one value and the mapping entry describing it
+  (`field`), returning the cast term directly. A value a codec doesn't
+  recognize should pass through unchanged rather than raise, so a bad cast
+  degrades to identity instead of failing the whole document.
+
+  ## Adding mapping types
+
+  A codec is a plain module, so covering one more type is a clause per
+  direction and a delegation back here for everything else:
 
       defmodule MyApp.Codec do
-        use Dowser.Client.Codec.Builder, inherit: Dowser.Elasticsearch.Codec
+        @behaviour Dowser.Elasticsearch.Codec
 
-        cast %{"type" => "scaled_float"}, MyApp.Fields.ScaledFloat
+        @impl true
+        def load(value, %{"type" => "my_type"} = field) do
+          # ...
+        end
+
+        def load(value, field), do: Dowser.Elasticsearch.Codec.load(value, field)
+
+        @impl true
+        def dump(value, %{"type" => "my_type"} = field) do
+          # ...
+        end
+
+        def dump(value, field), do: Dowser.Elasticsearch.Codec.dump(value, field)
       end
 
-  Inherited casts are matched first, so to *replace* a built-in cast (e.g.
-  handle a custom date `format`), declare every cast yourself instead of
-  inheriting. A module built this way only gets `load/2`/`dump/2`
-  (single-field casting), not `decode/2`/`encode/2` — it can't be set as
-  `:codec_adapter` directly; write your own whole-body module modeled on
-  this one, dispatching to `MyApp.Codec.load/2`/`dump/2` instead.
+  Delegating last inherits the built-in casts — including the `nil`
+  short-circuit and the fall-through to identity, so neither needs restating.
+  Matching a type this module already handles *replaces* that cast (e.g. to
+  handle a custom date `format`), since your clause comes first.
+
+  A module like that only needs `load/2` and `dump/2`: the envelope walking
+  stays here, and `:codec` points `decode/2`/`encode/2` at it. It resolves
+  most-specific-first, like every other option in this package:
+
+    1. **Per request** — `:codec` alongside any other option:
+
+           Dowser.Elasticsearch.Document.get("posts", "1", codec: MyApp.Codec)
+
+    2. **Per context** — named alongside the pass it belongs to:
+
+           decoder: {Dowser.Elasticsearch.Codec, codec: MyApp.Codec},
+           encoder: {Dowser.Elasticsearch.Codec, codec: MyApp.Codec}
+
+    3. **Globally** — the usual place for an application with one codec, and
+       the only tier that needs no tuple:
+
+           config :dowser_elasticsearch, codec: MyApp.Codec
+
+    4. This module, when none of the above is set.
+
+  ## Options
+
+  `dowser_client` always supplies `:context` (the resolved
+  `Dowser.Client.Context`), and a decoder also gets `:key_fn` (the function
+  `:keys` resolved to). The rest are this module's own, given alongside it as
+  `{Dowser.Elasticsearch.Codec, opts}`:
+
+    * `:codec` — the field codec `load/2`/`dump/2` are dispatched through, as
+      above.
+    * `:index` — the index whose mapping `encode/2` casts a source against, and
+      that `decode/2` casts a `:source` body against. Set by the API function
+      itself.
+    * `:source` — `true` when a response body is a bare `_source` document with
+      no `_index` of its own (`Dowser.Elasticsearch.Document.get_source/3`).
+      Set by the API function itself.
   """
 
-  @behaviour Dowser.Client.Codec
-
-  use Dowser.Client.Codec.Builder
-
-  alias Dowser.Elasticsearch.Fields
   alias Dowser.Elasticsearch.Mappable
   alias Dowser.Elasticsearch.MappingCacher
 
+  ## Behaviour callbacks
+
+  @doc "Casts `value` from its Elasticsearch representation into a richer term."
+  @callback load(value :: term(), field :: term()) :: term()
+
+  @doc "Casts `value` back into its Elasticsearch representation."
+  @callback dump(value :: term(), field :: term()) :: term()
+
+  # This module dispatches to the field codecs in the table below, and is
+  # itself one — which is what makes it the default `:codec`.
+  @behaviour __MODULE__
+
+  ## Module attributes
+
+  @codecs %{
+    "binary" => Dowser.Elasticsearch.Codec.Binary,
+    "date" => Dowser.Elasticsearch.Codec.Date,
+    "date_nanos" => Dowser.Elasticsearch.Codec.Date,
+    "date_range" => Dowser.Elasticsearch.Codec.DateRange,
+    "geo_point" => Dowser.Elasticsearch.Codec.GeoPoint,
+    "integer_range" => Dowser.Elasticsearch.Codec.Range,
+    "ip" => Dowser.Elasticsearch.Codec.IP
+  }
+
   @bulk_actions [:index, :create, :update, :delete]
 
-  ## Type castings
+  # Where an update action's source sits, in both key styles — a key that isn't
+  # there is skipped rather than created.
+  @update_keys [:doc, :upsert]
 
-  cast(%{"type" => "date"}, Fields.Date)
-  cast(%{"type" => "date_nanos"}, Fields.Date)
-  cast(%{"type" => "date_range"}, Fields.DateRange)
-  cast(%{"type" => "integer_range"}, Fields.Range)
-  cast(%{"type" => "ip"}, Fields.IP)
-  cast(%{"type" => "binary"}, Fields.Binary)
-  cast(%{"type" => "geo_point"}, Fields.GeoPoint)
+  ## Public functions — whole bodies
 
-  ## Public functions — whole-body casting
+  @doc """
+  Casts every document found in `body`, returning the decoded term.
 
-  @impl true
-  def decode(term, opts) do
+  See the module documentation for the options; `:key_fn` is required, and
+  `dowser_client` always supplies it.
+  """
+  @spec decode(term(), keyword()) :: term()
+  def decode(body, opts) do
     key_fn = Keyword.fetch!(opts, :key_fn)
-    config = Keyword.get(opts, :config)
+    context = Keyword.get(opts, :context)
+    codec = codec(opts)
+    load = &codec.load/2
 
     if Keyword.get(opts, :source, false) do
-      mapping = fetch_mapping(config, Keyword.get(opts, :index))
-      {:ok, Mappable.decode(term, mapping, key_fn, &load/2)}
+      mapping = MappingCacher.fetch(context, Keyword.get(opts, :index))
+
+      Mappable.decode(body, mapping, key_fn, load)
     else
-      {:ok, Mappable.decode(term, mapping_fn(config), key_fn, &load/2)}
+      Mappable.decode(body, mapping_fn(context), key_fn, load)
     end
   end
 
-  @impl true
-  def encode(term, opts) when is_list(term) do
-    config = Keyword.get(opts, :config)
-    index = Keyword.get(opts, :index)
+  @doc """
+  Casts `source` against the mapping of `opts[:index]`, returning the encoded
+  term.
 
-    {:ok, bulk_pairs(term, config, index)}
+  Without an `:index` there is no mapping to cast against, and the source
+  passes through unchanged. See the module documentation for the options.
+  """
+  @spec encode(term(), keyword()) :: term()
+  def encode(source, opts) do
+    codec = codec(opts)
+    mapping = MappingCacher.fetch(Keyword.get(opts, :context), Keyword.get(opts, :index))
+
+    Mappable.encode(source, mapping, &codec.dump/2, false)
   end
 
-  def encode(term, opts) do
-    config = Keyword.get(opts, :config)
-    index = Keyword.get(opts, :index)
-    doc_key = Keyword.get(opts, :doc_key)
+  @doc """
+  Casts the payloads of a `Dowser.Elasticsearch.Document.bulk/2` operation list.
 
-    cond do
-      is_nil(index) ->
-        {:ok, term}
+  A bulk body is a flat list alternating action and payload maps, so a payload
+  only knows which index it is going to from the action line above it — which
+  is why it is cast here, over the whole list, rather than line by line through
+  `Dowser.Client`'s `:encode`.
 
-      doc_key ->
-        {:ok, encode_doc_key(term, doc_key, fetch_mapping(config, index))}
+  `fun` is the resolved encoder (`encode/2` or a custom one) and `opts` its
+  options; `opts[:index]` is the bulk-level default index, which a per-action
+  `_index` overrides. `index`/`create` actions have their whole payload cast,
+  `update` actions only their `doc`/`upsert` source, and `delete` actions carry
+  no payload to cast.
+  """
+  @spec encode_bulk([map()], (term(), keyword() -> term()), keyword()) :: [map()]
+  def encode_bulk(operations, fun, opts) when is_list(operations) do
+    default_index = Keyword.get(opts, :index)
 
-      true ->
-        {:ok, Mappable.encode(term, fetch_mapping(config, index), &dump/2, false)}
-    end
-  end
-
-  ## Private functions — mapping lookup
-
-  defp mapping_fn(config) do
-    fn index -> {:ok, fetch_mapping(config, index)} end
-  end
-
-  defp fetch_mapping(nil, _index), do: nil
-  defp fetch_mapping(_config, nil), do: nil
-
-  defp fetch_mapping(config, index) do
-    case MappingCacher.get(config, index) do
-      {:ok, mapping} ->
-        mapping
-
-      _error ->
-        nil
-    end
-  rescue
-    _exception ->
-      nil
-  catch
-    :exit, _reason ->
-      nil
-  end
-
-  ## Private functions — encode
-
-  defp encode_doc_key(%{} = term, doc_key, mapping) do
-    string_key = Atom.to_string(doc_key)
-    dump_fn = fn value -> Mappable.encode(value, mapping, &dump/2, false) end
-
-    cond do
-      Map.has_key?(term, doc_key) ->
-        Map.update!(term, doc_key, dump_fn)
-
-      Map.has_key?(term, string_key) ->
-        Map.update!(term, string_key, dump_fn)
-
-      true ->
-        term
-    end
-  end
-
-  # Walks the flat, alternating bulk action list, casting each payload
-  # against its action's own index (a per-action `_index` overriding the
-  # bulk-level default) — `delete` actions carry no payload to cast.
-  defp bulk_pairs(operations, config, default_index) do
     {items, _state} =
-      Enum.map_reduce(operations, :header, &bulk_step(&1, &2, config, default_index))
+      Enum.map_reduce(operations, :header, &bulk_step(&1, &2, fun, opts, default_index))
 
     items
   end
 
-  defp bulk_step(item, :header, _config, default_index) do
+  ## Public functions — one value
+
+  @doc """
+  Casts `value` from Elasticsearch's representation, dispatching on `field`'s
+  `"type"`.
+
+  A `nil` value, a mapping entry with no known `"type"`, or no mapping entry at
+  all, all return `value` untouched — so a missing mapping degrades a cast to
+  identity rather than failing.
+  """
+  @impl true
+  def load(value, field)
+
+  def load(nil, _field), do: nil
+
+  def load(value, %{"type" => type} = field) do
+    case Map.fetch(@codecs, type) do
+      {:ok, codec} ->
+        codec.load(value, field)
+
+      :error ->
+        value
+    end
+  end
+
+  def load(value, _field), do: value
+
+  @doc """
+  Casts `value` back into Elasticsearch's representation, dispatching on
+  `field`'s `"type"`.
+
+  The mirror image of `load/2`, with the same fallbacks.
+  """
+  @impl true
+  def dump(value, field)
+
+  def dump(nil, _field), do: nil
+
+  def dump(value, %{"type" => type} = field) do
+    case Map.fetch(@codecs, type) do
+      {:ok, codec} ->
+        codec.dump(value, field)
+
+      :error ->
+        value
+    end
+  end
+
+  def dump(value, _field), do: value
+
+  ## Private functions — the field codec
+
+  defp codec(opts) do
+    Keyword.get(opts, :codec) || Application.get_env(:dowser_elasticsearch, :codec, __MODULE__)
+  end
+
+  # A hit carries the index it came from, so its mapping is resolved lazily,
+  # per document, as the envelope is walked.
+  defp mapping_fn(context) do
+    fn index -> {:ok, MappingCacher.fetch(context, index)} end
+  end
+
+  ## Private functions — bulk
+
+  defp bulk_step(item, :header, _fun, _opts, default_index) do
     {action, header} = bulk_action(item)
     index = fetch_any(header, :_index) || default_index
     next = if action == :delete, do: :header, else: {:payload, action, index}
@@ -193,12 +335,14 @@ defmodule Dowser.Elasticsearch.Codec do
     {item, next}
   end
 
-  defp bulk_step(item, {:payload, :update, index}, config, _default_index) do
-    {encode_doc_key(item, :doc, fetch_mapping(config, index)), :header}
+  defp bulk_step(item, {:payload, :update, index}, fun, opts, _default_index) do
+    opts = Keyword.put(opts, :index, index)
+
+    {Enum.reduce(@update_keys, item, &encode_key(&2, &1, fun, opts)), :header}
   end
 
-  defp bulk_step(item, {:payload, _action, index}, config, _default_index) do
-    {Mappable.encode(item, fetch_mapping(config, index), &dump/2, false), :header}
+  defp bulk_step(item, {:payload, _action, index}, fun, opts, _default_index) do
+    {fun.(item, Keyword.put(opts, :index, index)), :header}
   end
 
   defp bulk_action(header) do
@@ -211,6 +355,22 @@ defmodule Dowser.Elasticsearch.Codec do
           nil
       end
     end)
+  end
+
+  # A bulk payload may be written with atom or string keys, so both are tried.
+  defp encode_key(%{} = term, key, fun, opts) do
+    string_key = Atom.to_string(key)
+
+    cond do
+      Map.has_key?(term, key) ->
+        Map.update!(term, key, &fun.(&1, opts))
+
+      Map.has_key?(term, string_key) ->
+        Map.update!(term, string_key, &fun.(&1, opts))
+
+      true ->
+        term
+    end
   end
 
   defp fetch_any(map, key), do: Map.get(map, key) || Map.get(map, Atom.to_string(key))

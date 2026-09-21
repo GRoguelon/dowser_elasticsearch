@@ -4,7 +4,29 @@ defmodule Dowser.Elasticsearch.DocumentTest do
   alias Dowser.Elasticsearch.Document
   alias Dowser.Elasticsearch.HTTPStub
 
-  defp config(port), do: HTTPStub.config(port)
+  defmodule UpcaseCodec do
+    @behaviour Dowser.Elasticsearch.Codec
+
+    @impl true
+    def load(value, %{"type" => "text"}) when is_binary(value), do: String.upcase(value)
+    def load(value, field), do: Dowser.Elasticsearch.Codec.load(value, field)
+
+    @impl true
+    def dump(value, field), do: Dowser.Elasticsearch.Codec.dump(value, field)
+  end
+
+  defmodule ExclaimCodec do
+    @behaviour Dowser.Elasticsearch.Codec
+
+    @impl true
+    def load(value, %{"type" => "text"}) when is_binary(value), do: value <> "!"
+    def load(value, field), do: Dowser.Elasticsearch.Codec.load(value, field)
+
+    @impl true
+    def dump(value, field), do: Dowser.Elasticsearch.Codec.dump(value, field)
+  end
+
+  defp context(port), do: HTTPStub.context(port)
   defp start_server(response \\ HTTPStub.ok_response()), do: HTTPStub.start_server(response)
 
   defp json_response(body) do
@@ -16,7 +38,7 @@ defmodule Dowser.Elasticsearch.DocumentTest do
     test "index/3 POSTs the document to /{index}/_doc" do
       {port, server} = start_server()
 
-      assert {:ok, _} = Document.index(%{"title" => "hi"}, "posts", config: config(port))
+      assert {:ok, _} = Document.index(%{"title" => "hi"}, "posts", context: context(port))
 
       req = Task.await(server)
       assert req.method == "POST"
@@ -28,7 +50,7 @@ defmodule Dowser.Elasticsearch.DocumentTest do
       {port, server} = start_server()
 
       assert {:ok, _} =
-               Document.index(%{"title" => "hi"}, "posts", id: "1", config: config(port))
+               Document.index(%{"title" => "hi"}, "posts", id: "1", context: context(port))
 
       assert Task.await(server).path == "/posts/_doc/1"
     end
@@ -43,7 +65,7 @@ defmodule Dowser.Elasticsearch.DocumentTest do
       {port, server} = start_server()
 
       assert {:ok, _} =
-               Document.create(%{"title" => "hi"}, "posts", "1", config: config(port))
+               Document.create(%{"title" => "hi"}, "posts", "1", context: context(port))
 
       req = Task.await(server)
       assert req.method == "POST"
@@ -54,7 +76,7 @@ defmodule Dowser.Elasticsearch.DocumentTest do
     test "get/3 GETs /{index}/_doc/{id}" do
       {port, server} = start_server()
 
-      assert {:ok, _} = Document.get("posts", "1", config: config(port))
+      assert {:ok, _} = Document.get("posts", "1", context: context(port))
 
       req = Task.await(server)
       assert req.method == "GET"
@@ -64,7 +86,7 @@ defmodule Dowser.Elasticsearch.DocumentTest do
     test "delete/3 DELETEs /{index}/_doc/{id}" do
       {port, server} = start_server()
 
-      assert {:ok, _} = Document.delete("posts", "1", config: config(port))
+      assert {:ok, _} = Document.delete("posts", "1", context: context(port))
 
       req = Task.await(server)
       assert req.method == "DELETE"
@@ -73,34 +95,34 @@ defmodule Dowser.Elasticsearch.DocumentTest do
 
     test "exists/3 HEADs /{index}/_doc/{id} and returns result tuples" do
       {port, server} = start_server(HTTPStub.head_response(200))
-      assert {:ok, true} = Document.exists("posts", "1", config: config(port))
+      assert {:ok, true} = Document.exists("posts", "1", context: context(port))
 
       req = Task.await(server)
       assert req.method == "HEAD"
       assert req.path == "/posts/_doc/1"
 
       {port, server} = start_server(HTTPStub.head_response(404))
-      assert {:ok, false} = Document.exists("posts", "1", config: config(port))
+      assert {:ok, false} = Document.exists("posts", "1", context: context(port))
       Task.await(server)
     end
 
     test "exists?/3 returns the bare boolean" do
       {port, server} = start_server(HTTPStub.head_response(200))
-      assert Document.exists?("posts", "1", config: config(port)) == true
+      assert Document.exists?("posts", "1", context: context(port)) == true
       Task.await(server)
     end
 
     test "get_source/3 GETs /{index}/_source/{id}" do
       {port, server} = start_server()
 
-      assert {:ok, _} = Document.get_source("posts", "1", config: config(port))
+      assert {:ok, _} = Document.get_source("posts", "1", context: context(port))
       assert Task.await(server).path == "/posts/_source/1"
     end
 
     test "source_exists/3 HEADs /{index}/_source/{id}" do
       {port, server} = start_server(HTTPStub.head_response(404))
 
-      assert {:ok, false} = Document.source_exists("posts", "1", config: config(port))
+      assert {:ok, false} = Document.source_exists("posts", "1", context: context(port))
 
       req = Task.await(server)
       assert req.method == "HEAD"
@@ -111,7 +133,9 @@ defmodule Dowser.Elasticsearch.DocumentTest do
       {port, server} = start_server()
 
       assert {:ok, _} =
-               Document.update(%{"doc" => %{"title" => "hi"}}, "posts", "1", config: config(port))
+               Document.update(%{"doc" => %{"title" => "hi"}}, "posts", "1",
+                 context: context(port)
+               )
 
       req = Task.await(server)
       assert req.method == "POST"
@@ -120,7 +144,7 @@ defmodule Dowser.Elasticsearch.DocumentTest do
     end
   end
 
-  describe "type casting via :type_codec" do
+  describe "type casting via Codec" do
     @mapping %{
       "properties" => %{
         "published_at" => %{"type" => "date", "format" => "strict_date_optional_time"}
@@ -136,7 +160,7 @@ defmodule Dowser.Elasticsearch.DocumentTest do
       {port, server} = start_server(json_response(body))
 
       assert {:ok, doc} =
-               Document.get("posts", "1", config: HTTPStub.config_with_codec_adapter(port))
+               Document.get("posts", "1", context: HTTPStub.context_with_casting(port))
 
       assert doc["_source"]["published_at"] == ~U[2026-08-11 00:00:00.000Z]
       assert doc["_source"]["title"] == "hi"
@@ -151,7 +175,7 @@ defmodule Dowser.Elasticsearch.DocumentTest do
       {port, server} = start_server(json_response(body))
 
       assert {:ok, source} =
-               Document.get_source("posts", "1", config: HTTPStub.config_with_codec_adapter(port))
+               Document.get_source("posts", "1", context: HTTPStub.context_with_casting(port))
 
       assert source["published_at"] == ~U[2026-08-11 00:00:00.000Z]
       assert source["title"] == "hi"
@@ -170,7 +194,7 @@ defmodule Dowser.Elasticsearch.DocumentTest do
       assert {:ok, %{"docs" => [doc]}} =
                Document.mget(%{"ids" => ["1"]},
                  index: "posts",
-                 config: HTTPStub.config_with_codec_adapter(port)
+                 context: HTTPStub.context_with_casting(port)
                )
 
       assert doc["_source"]["published_at"] == ~U[2026-08-11 00:00:00.000Z]
@@ -185,7 +209,7 @@ defmodule Dowser.Elasticsearch.DocumentTest do
       document = %{"published_at" => ~U[2026-08-11 00:00:00Z], "title" => "hi"}
 
       assert {:ok, _} =
-               Document.index(document, "posts", config: HTTPStub.config_with_codec_adapter(port))
+               Document.index(document, "posts", context: HTTPStub.context_with_casting(port))
 
       assert Task.await(server).body ==
                ~s({"published_at":"2026-08-11T00:00:00Z","title":"hi"})
@@ -198,11 +222,109 @@ defmodule Dowser.Elasticsearch.DocumentTest do
       body = %{"doc" => %{"published_at" => ~U[2026-08-11 00:00:00Z]}}
 
       assert {:ok, _} =
-               Document.update(body, "posts", "1",
-                 config: HTTPStub.config_with_codec_adapter(port)
-               )
+               Document.update(body, "posts", "1", context: HTTPStub.context_with_casting(port))
 
       assert Task.await(server).body == ~s({"doc":{"published_at":"2026-08-11T00:00:00Z"}})
+    end
+
+    test "update/4 casts an atom-keyed doc, and a doc_as_upsert's upsert too" do
+      HTTPStub.start_mapping_cacher!(@mapping)
+      {port, server} = start_server()
+
+      body = %{
+        doc: %{"published_at" => ~U[2026-08-11 00:00:00Z]},
+        upsert: %{"published_at" => ~U[2026-08-12 00:00:00Z]}
+      }
+
+      assert {:ok, _} =
+               Document.update(body, "posts", "1", context: HTTPStub.context_with_casting(port))
+
+      assert Task.await(server).body ==
+               ~s({"doc":{"published_at":"2026-08-11T00:00:00Z"},) <>
+                 ~s("upsert":{"published_at":"2026-08-12T00:00:00Z"}})
+    end
+
+    test "update/4 leaves a scripted body alone" do
+      HTTPStub.start_mapping_cacher!(@mapping)
+      {port, server} = start_server()
+
+      body = %{"script" => %{"source" => "ctx._source.views++"}}
+
+      assert {:ok, _} =
+               Document.update(body, "posts", "1", context: HTTPStub.context_with_casting(port))
+
+      assert Task.await(server).body == ~s({"script":{"source":"ctx._source.views++"}})
+    end
+
+    test ":codec resolves request > context > config > the default" do
+      HTTPStub.start_mapping_cacher!(%{"properties" => %{"title" => %{"type" => "text"}}})
+
+      body = ~s({"_index":"posts","_source":{"title":"hello"}})
+
+      title = fn opts ->
+        {port, server} = start_server(json_response(body))
+        context = HTTPStub.context_with_casting(port)
+        {:ok, doc} = Document.get("posts", "1", Keyword.put(opts, :context, context))
+        Task.await(server)
+
+        doc["_source"]["title"]
+      end
+
+      # 4. the built-in codec leaves `text` alone.
+      assert title.([]) == "hello"
+
+      # 3. the application environment.
+      Application.put_env(:dowser_elasticsearch, :codec, UpcaseCodec)
+      on_exit(fn -> Application.delete_env(:dowser_elasticsearch, :codec) end)
+      assert title.([]) == "HELLO"
+
+      # 2. the context's own decoder, over the application environment.
+      {port, server} = start_server(json_response(body))
+
+      assert {:ok, doc} =
+               Document.get("posts", "1",
+                 context: [
+                   endpoint: "http://127.0.0.1:#{port}",
+                   decoder: {Dowser.Elasticsearch.Codec, codec: ExclaimCodec}
+                 ]
+               )
+
+      Task.await(server)
+      assert doc["_source"]["title"] == "hello!"
+
+      # 1. the request, over both.
+      assert title.(codec: ExclaimCodec) == "hello!"
+
+      {port, server} = start_server(json_response(body))
+
+      assert {:ok, doc} =
+               Document.get("posts", "1",
+                 codec: ExclaimCodec,
+                 context: [
+                   endpoint: "http://127.0.0.1:#{port}",
+                   decoder: {Dowser.Elasticsearch.Codec, codec: UpcaseCodec}
+                 ]
+               )
+
+      Task.await(server)
+      assert doc["_source"]["title"] == "hello!"
+    end
+
+    test "without a :decoder/:encoder configured, nothing is cast either way" do
+      HTTPStub.start_mapping_cacher!(@mapping)
+
+      response = ~s({"_index":"posts","_source":{"published_at":"2026-08-11T00:00:00.000Z"}})
+      {port, server} = start_server(json_response(response))
+
+      assert {:ok, doc} =
+               Document.index(%{"published_at" => ~U[2026-08-11 00:00:00Z]}, "posts",
+                 context: context(port)
+               )
+
+      assert doc["_source"]["published_at"] == "2026-08-11T00:00:00.000Z"
+
+      # `DateTime` encodes itself as ISO 8601 through `JSON`, mapping or not.
+      assert Task.await(server).body == ~s({"published_at":"2026-08-11T00:00:00Z"})
     end
 
     test "bulk/2 casts request payload values and response item _source values" do
@@ -221,7 +343,7 @@ defmodule Dowser.Elasticsearch.DocumentTest do
       assert {:ok, _} =
                Document.bulk(operations,
                  index: "posts",
-                 config: HTTPStub.config_with_codec_adapter(port)
+                 context: HTTPStub.context_with_casting(port)
                )
 
       req = Task.await(server)
@@ -234,7 +356,7 @@ defmodule Dowser.Elasticsearch.DocumentTest do
       {port, server} = start_server()
 
       operations = [%{"index" => %{"_id" => "1"}}, %{"title" => "hi"}]
-      assert {:ok, _} = Document.bulk(operations, config: config(port))
+      assert {:ok, _} = Document.bulk(operations, context: context(port))
 
       req = Task.await(server)
       assert req.method == "POST"
@@ -246,7 +368,7 @@ defmodule Dowser.Elasticsearch.DocumentTest do
     test "bulk/2 targets an index" do
       {port, server} = start_server()
 
-      assert {:ok, _} = Document.bulk([%{}, %{}], index: "posts", config: config(port))
+      assert {:ok, _} = Document.bulk([%{}, %{}], index: "posts", context: context(port))
       assert Task.await(server).path == "/posts/_bulk"
     end
 
@@ -254,7 +376,7 @@ defmodule Dowser.Elasticsearch.DocumentTest do
       {port, server} = start_server()
 
       assert {:ok, _} =
-               Document.mget(%{"ids" => ["1", "2"]}, index: "posts", config: config(port))
+               Document.mget(%{"ids" => ["1", "2"]}, index: "posts", context: context(port))
 
       req = Task.await(server)
       assert req.method == "POST"
@@ -269,7 +391,7 @@ defmodule Dowser.Elasticsearch.DocumentTest do
 
       assert {:ok, _} =
                Document.delete_by_query(%{"query" => %{"match_all" => %{}}}, "posts",
-                 config: config(port)
+                 context: context(port)
                )
 
       req = Task.await(server)
@@ -281,7 +403,7 @@ defmodule Dowser.Elasticsearch.DocumentTest do
     test "update_by_query/3 POSTs the body to /{index}/_update_by_query" do
       {port, server} = start_server()
 
-      assert {:ok, _} = Document.update_by_query(%{}, "posts", config: config(port))
+      assert {:ok, _} = Document.update_by_query(%{}, "posts", context: context(port))
 
       req = Task.await(server)
       assert req.path == "/posts/_update_by_query"
@@ -292,7 +414,7 @@ defmodule Dowser.Elasticsearch.DocumentTest do
       {port, server} = start_server()
 
       body = %{"source" => %{"index" => "old"}, "dest" => %{"index" => "new"}}
-      assert {:ok, _} = Document.reindex(body, config: config(port))
+      assert {:ok, _} = Document.reindex(body, context: context(port))
 
       req = Task.await(server)
       assert req.method == "POST"
@@ -305,7 +427,7 @@ defmodule Dowser.Elasticsearch.DocumentTest do
     test "delete_by_query_rethrottle/3 POSTs with requests_per_second" do
       {port, server} = start_server()
 
-      assert {:ok, _} = Document.delete_by_query_rethrottle("t:1", 10, config: config(port))
+      assert {:ok, _} = Document.delete_by_query_rethrottle("t:1", 10, context: context(port))
 
       req = Task.await(server)
       assert req.method == "POST"
@@ -315,14 +437,14 @@ defmodule Dowser.Elasticsearch.DocumentTest do
     test "update_by_query_rethrottle/3 POSTs with requests_per_second" do
       {port, server} = start_server()
 
-      assert {:ok, _} = Document.update_by_query_rethrottle("t:1", -1, config: config(port))
+      assert {:ok, _} = Document.update_by_query_rethrottle("t:1", -1, context: context(port))
       assert Task.await(server).path == "/_update_by_query/t:1/_rethrottle?requests_per_second=-1"
     end
 
     test "reindex_rethrottle/3 POSTs with requests_per_second" do
       {port, server} = start_server()
 
-      assert {:ok, _} = Document.reindex_rethrottle("t:1", 10, config: config(port))
+      assert {:ok, _} = Document.reindex_rethrottle("t:1", 10, context: context(port))
       assert Task.await(server).path == "/_reindex/t:1/_rethrottle?requests_per_second=10"
     end
   end
@@ -332,7 +454,9 @@ defmodule Dowser.Elasticsearch.DocumentTest do
       {port, server} = start_server()
 
       assert {:ok, _} =
-               Document.termvectors(%{"doc" => %{"title" => "hi"}}, "posts", config: config(port))
+               Document.termvectors(%{"doc" => %{"title" => "hi"}}, "posts",
+                 context: context(port)
+               )
 
       req = Task.await(server)
       assert req.method == "POST"
@@ -342,7 +466,7 @@ defmodule Dowser.Elasticsearch.DocumentTest do
     test "termvectors/3 targets /{index}/_termvectors/{id} when an id is given" do
       {port, server} = start_server()
 
-      assert {:ok, _} = Document.termvectors(%{}, "posts", id: "1", config: config(port))
+      assert {:ok, _} = Document.termvectors(%{}, "posts", id: "1", context: context(port))
       assert Task.await(server).path == "/posts/_termvectors/1"
     end
 
@@ -350,7 +474,7 @@ defmodule Dowser.Elasticsearch.DocumentTest do
       {port, server} = start_server()
 
       assert {:ok, _} =
-               Document.mtermvectors(%{"ids" => ["1"]}, index: "posts", config: config(port))
+               Document.mtermvectors(%{"ids" => ["1"]}, index: "posts", context: context(port))
 
       req = Task.await(server)
       assert req.method == "POST"

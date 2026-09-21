@@ -22,11 +22,16 @@ defmodule Dowser.Elasticsearch.Document do
       (`404` → `false`) and raises on genuine errors.
 
   All remaining options are forwarded to `Dowser.Client.request/4`, e.g.
-  `:config`, `:params` (query-string parameters), `:format`, `:http_adapter`,
-  `:json_adapter` and `:http_opts` (including `:headers`).
+  `:context`, `:params` (query-string parameters), `:format`, `:keys` and
+  `:http_opts` (including `:headers`) — plus `:codec`, this package's own,
+  which picks the per-field codec for this one request (see
+  `Dowser.Elasticsearch.Codec`).
 
-  Values are cast automatically wherever `:codec_adapter` is set to
-  `Dowser.Elasticsearch.Codec` — no per-call option needed.
+  Values are cast automatically wherever `Dowser.Elasticsearch.Codec` is
+  configured as `:decoder`/`:encoder` — no per-call option needed. A response
+  carries each document's own `_index`, so reads need telling nothing; the
+  writing functions name the index each source is going to and where in the
+  request body it sits, which is the mapping the encoder needs.
 
   On a 2xx response every function returns `{:ok, body}` with the decoded
   response body. A non-2xx response returns
@@ -35,9 +40,17 @@ defmodule Dowser.Elasticsearch.Document do
   a bang variant that returns the body directly or raises the error exception.
   """
 
-  alias Dowser.Client
+  alias Dowser.Elasticsearch.Client
+  alias Dowser.Elasticsearch.Codec
   alias Dowser.Elasticsearch.Helpers
   alias Dowser.Elasticsearch.Index
+
+  ## Module attributes
+
+  # Where `update/4`'s body carries a document source, in both key styles — a
+  # path that isn't there is skipped rather than created, so listing all four
+  # costs nothing and a `%{script: ...}` body is left alone.
+  @update_sources [["doc"], [:doc], ["upsert"], [:upsert]]
 
   ## Typespecs
 
@@ -62,7 +75,7 @@ defmodule Dowser.Elasticsearch.Document do
   @spec index(map(), index(), keyword()) :: result()
   def index(%{} = document, index, opts \\ []) do
     {id, opts} = Keyword.pop(opts, :id)
-    opts = Helpers.put_codec_opts(opts, index: index)
+    opts = Client.put_encoder(opts, [index: index], true)
 
     suffix =
       if id do
@@ -93,7 +106,7 @@ defmodule Dowser.Elasticsearch.Document do
   """
   @spec create(map(), index(), id(), keyword()) :: result()
   def create(%{} = document, index, id, opts \\ []) do
-    opts = Helpers.put_codec_opts(opts, index: index)
+    opts = Client.put_encoder(opts, [index: index], true)
 
     index
     |> Helpers.required_path("/_create/" <> URI.encode(id))
@@ -177,7 +190,7 @@ defmodule Dowser.Elasticsearch.Document do
   """
   @spec get_source(index(), id(), keyword()) :: result()
   def get_source(index, id, opts \\ []) do
-    opts = Helpers.put_codec_opts(opts, index: index, source: true)
+    opts = Client.put_decoder(opts, index: index, source: true)
 
     index
     |> Helpers.required_path("/_source/" <> URI.encode(id))
@@ -225,7 +238,7 @@ defmodule Dowser.Elasticsearch.Document do
   """
   @spec update(map(), index(), id(), keyword()) :: result()
   def update(%{} = body, index, id, opts \\ []) do
-    opts = Helpers.put_codec_opts(opts, index: index, doc_key: :doc)
+    opts = Client.put_encoder(opts, [index: index], @update_sources)
 
     index
     |> Helpers.required_path("/_update/" <> URI.encode(id))
@@ -264,10 +277,15 @@ defmodule Dowser.Elasticsearch.Document do
   def bulk(operations, opts \\ []) when is_list(operations) do
     {index, opts} = Keyword.pop(opts, :index)
 
+    # The payloads are cast here rather than by `Dowser.Client`, so a
+    # request-level `:codec` has to be folded in before the encoder is
+    # resolved — `Helpers.post/3` would do it too late.
     opts =
       opts
+      |> Client.put_codec()
       |> Helpers.put_default_format(:req_format, :ndjson)
-      |> Helpers.put_codec_opts(index: index)
+
+    operations = encode_bulk(operations, index, opts)
 
     index
     |> Helpers.path("/_bulk")
@@ -540,6 +558,20 @@ defmodule Dowser.Elasticsearch.Document do
   end
 
   ## Private functions
+
+  # A bulk payload is cast against the index named on the action line above it,
+  # which `Dowser.Client`'s per-line `:encode` can't see — so the whole list is
+  # walked here instead, and `:encode` is left off.
+  @spec encode_bulk([map()], index() | nil, keyword()) :: [map()]
+  defp encode_bulk(operations, index, opts) do
+    case Client.resolve_encoder(opts) do
+      nil ->
+        operations
+
+      {fun, encoder_opts} ->
+        Codec.encode_bulk(operations, fun, Keyword.put_new(encoder_opts, :index, index))
+    end
+  end
 
   # HEAD responses have no body, so the response format defaults to :raw.
   @spec head(String.t(), keyword()) :: exists_result()

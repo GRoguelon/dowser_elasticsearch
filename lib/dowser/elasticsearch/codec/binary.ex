@@ -1,4 +1,4 @@
-defmodule Dowser.Elasticsearch.Fields.Binary do
+defmodule Dowser.Elasticsearch.Codec.Binary do
   @moduledoc """
   `binary` — a Base64 string <-> a raw binary.
 
@@ -8,9 +8,9 @@ defmodule Dowser.Elasticsearch.Fields.Binary do
 
   require Logger
 
-  @behaviour Dowser.Client.Field
+  @behaviour Dowser.Elasticsearch.Codec
 
-  @impl Dowser.Client.Field
+  @impl true
   def load(value, _field) when is_binary(value) do
     case Base.decode64(value) do
       {:ok, decoded} ->
@@ -18,7 +18,7 @@ defmodule Dowser.Elasticsearch.Fields.Binary do
 
       :error ->
         Logger.error(
-          "Unknown error while loading Dowser.Elasticsearch.Fields.Binary: invalid Base64"
+          "Unknown error while loading Dowser.Elasticsearch.Codec.Binary: invalid Base64"
         )
 
         value
@@ -29,7 +29,7 @@ defmodule Dowser.Elasticsearch.Fields.Binary do
     value
   end
 
-  @impl Dowser.Client.Field
+  @impl true
   def dump(value, _field) when is_binary(value) do
     Base.encode64(value)
   end

@@ -1,23 +1,23 @@
-defmodule Dowser.Elasticsearch.Fields.DateRange do
+defmodule Dowser.Elasticsearch.Codec.DateRange do
   @moduledoc """
   `date_range` — the `%{"gte" => _, "lte" => _}` object form <-> a `Date.Range`.
 
-  Bounds are cast through `Dowser.Elasticsearch.Fields.Date`, so they follow
+  Bounds are cast through `Dowser.Elasticsearch.Codec.Date`, so they follow
   the same mapping `"format"` (or Elasticsearch's own default when absent).
   """
 
-  alias Dowser.Elasticsearch.Fields.Date, as: DateField
+  alias Dowser.Elasticsearch.Codec.Date, as: DateCodec
 
   ## Behaviours
 
-  @behaviour Dowser.Client.Field
+  @behaviour Dowser.Elasticsearch.Codec
 
   ## Public functions
 
-  @impl Dowser.Client.Field
+  @impl true
   def load(%{"gte" => gte, "lte" => lte}, field) do
-    first = DateField.load(gte, field)
-    last = DateField.load(lte, field)
+    first = DateCodec.load(gte, field)
+    last = DateCodec.load(lte, field)
 
     Date.range(first, last)
   end
@@ -26,10 +26,10 @@ defmodule Dowser.Elasticsearch.Fields.DateRange do
     value
   end
 
-  @impl Dowser.Client.Field
+  @impl true
   def dump(%Date.Range{} = date_range, field) do
-    gte = DateField.dump(date_range.first, field)
-    lte = DateField.dump(date_range.last, field)
+    gte = DateCodec.dump(date_range.first, field)
+    lte = DateCodec.dump(date_range.last, field)
 
     %{"gte" => gte, "lte" => lte}
   end

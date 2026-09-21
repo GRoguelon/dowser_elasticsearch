@@ -1,4 +1,4 @@
-defmodule Dowser.Elasticsearch.Fields.Range do
+defmodule Dowser.Elasticsearch.Codec.Range do
   @moduledoc """
   `integer_range` — the `%{"gte" => _, "lte" => _}` object form <-> an Elixir
   `Range`.
@@ -8,11 +8,11 @@ defmodule Dowser.Elasticsearch.Fields.Range do
 
   ## Behaviours
 
-  @behaviour Dowser.Client.Field
+  @behaviour Dowser.Elasticsearch.Codec
 
   ## Public functions
 
-  @impl Dowser.Client.Field
+  @impl true
   def load(%{"gte" => gte, "lte" => lte}, _field) when is_integer(gte) and is_integer(lte) do
     Range.new(gte, lte)
   end
@@ -21,7 +21,7 @@ defmodule Dowser.Elasticsearch.Fields.Range do
     value
   end
 
-  @impl Dowser.Client.Field
+  @impl true
   def dump(%Range{} = range, _field) do
     %{"gte" => range.first, "lte" => range.last}
   end
