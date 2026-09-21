@@ -128,6 +128,13 @@ what changed, the guide says what to do about it.
   offsets (`+01:00`, normalized to UTC), a time with no offset at all (read
   as UTC, as Elasticsearch reads it) and fractions of any length. An
   unparseable value still passes through untouched.
+- **A hit's `inner_hits` came back string-keyed inside an otherwise atom-keyed
+  response.** Only `_source` was walked; every other envelope field —
+  `inner_hits`, `fields`, `highlight` — had its own key renamed and its value
+  returned exactly as it arrived, so `hit.inner_hits` under `keys: :atoms` was
+  a map of string keys. There is no mapping entry to cast these against (an
+  inner hit is a nested document and carries no `_index`), but their keys are
+  part of the same response and now follow the same `:keys`.
 - A **range held in an array was never cast**. `date_range` and
   `integer_range` were handled only where the range is a direct child of an
   object; Elasticsearch lets any field hold an array, and a range reached

@@ -1,6 +1,8 @@
 defimpl Dowser.Elasticsearch.Mappable, for: Map do
   import Dowser.Blank, only: [blank?: 1]
 
+  alias Dowser.CoreExt.Keyable
+
   # Mapping entries that describe a subtree without enumerating what is in it:
   # a `flattened` field holds one opaque object, and an `enabled: false` object
   # is kept in `_source` but never indexed. Either way the keys inside are
@@ -68,8 +70,15 @@ defimpl Dowser.Elasticsearch.Mappable, for: Map do
       {"_source" = key, value} ->
         {key_fn.(key), @protocol.decode(value, mapping, key_fn, value_fn)}
 
+      # The rest of a hit is envelope, not document: `inner_hits`, `fields`,
+      # `highlight` and friends. There is no mapping entry to cast them
+      # against — an inner hit is a nested document, and carries no `_index`
+      # of its own — but their keys are part of the same response, so they
+      # follow the same `:keys`. Renaming only the outer key would leave a
+      # caller reading `hit.inner_hits` a string-keyed map inside an
+      # otherwise atom-keyed one.
       {key, value} ->
-        {key_fn.(key), value}
+        {key_fn.(key), Keyable.transform_keys(value, key_fn)}
     end)
   end
 

@@ -356,6 +356,48 @@ defmodule Dowser.Elasticsearch.CodecTest do
     end
   end
 
+  describe "decode/2 — the rest of a hit's envelope" do
+    test "inner_hits keys follow the same :keys as the rest of the response" do
+      HTTPStub.start_mapping_cacher!(@mapping)
+
+      body = %{
+        "_index" => "posts",
+        "_id" => "1",
+        "_source" => %{"published_at" => "2026-08-11T00:00:00.000Z"},
+        "inner_hits" => %{
+          "alerts" => %{
+            "hits" => %{
+              "total" => %{"value" => 1, "relation" => "eq"},
+              "hits" => [%{"_id" => "a1", "_source" => %{"record_id" => "r1"}}]
+            }
+          }
+        }
+      }
+
+      assert %{inner_hits: inner_hits} =
+               Codec.decode(body, decode_opts(key_fn: &String.to_atom/1))
+
+      # Renaming only the outer key would leave a string-keyed map inside an
+      # otherwise atom-keyed response.
+      assert %{alerts: %{hits: %{total: %{value: 1}, hits: [hit]}}} = inner_hits
+      assert hit == %{_id: "a1", _source: %{record_id: "r1"}}
+    end
+
+    test "a hit's other envelope fields are keyed the same way" do
+      HTTPStub.start_mapping_cacher!(@mapping)
+
+      body = %{
+        "_index" => "posts",
+        "_source" => %{"published_at" => "2026-08-11T00:00:00.000Z"},
+        "sort" => ["a", 1],
+        "fields" => %{"title.keyword" => ["hi"]}
+      }
+
+      assert %{sort: ["a", 1], fields: %{"title.keyword": ["hi"]}} =
+               Codec.decode(body, decode_opts(key_fn: &String.to_atom/1))
+    end
+  end
+
   describe "decode/2 — ranges inside an array" do
     @range_mapping %{
       "properties" => %{
