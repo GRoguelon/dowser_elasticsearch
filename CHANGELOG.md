@@ -35,6 +35,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `Dowser.Elasticsearch.Reindex` — every endpoint tagged `reindex` in the
+  Elasticsearch specification, which is the reindex *task* family, not the
+  reindex itself: `list/1` (`GET /_reindex`) lists the tasks running, `get/2`
+  (`GET /_reindex/{task_id}`) follows one, and `cancel/2`
+  (`POST /_reindex/{task_id}/_cancel`) stops one.
+
+  ```elixir
+  {:ok, %{"task" => task_id}} =
+    Dowser.Elasticsearch.Document.reindex(
+      %{source: %{index: "posts"}, dest: %{index: "posts-v2"}},
+      params: [wait_for_completion: false]
+    )
+
+  Dowser.Elasticsearch.Reindex.get!(task_id)["completed"]
+  #=> false
+  ```
+
+  Starting a reindex stays `Dowser.Elasticsearch.Document.reindex/2`, which
+  the specification tags `document`, as is `reindex_rethrottle/3`. A task is
+  followed by its original id across node-shutdown relocations, so the id the
+  reindex returned stays valid for the lifetime of the operation.
+
 - `Dowser.Elasticsearch.Cluster` — every endpoint tagged `cluster` in the
   Elasticsearch specification, which covers both the cluster itself and the
   `_nodes` endpoints: `health/1`, `info/2`, `ping/1`, `remote_info/1`,
