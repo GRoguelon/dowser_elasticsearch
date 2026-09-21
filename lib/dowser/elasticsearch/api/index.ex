@@ -1543,7 +1543,7 @@ defmodule Dowser.Elasticsearch.Index do
   # An optional path parameter appended to `base`: absent leaves `base` alone,
   # present but empty is the same bad argument a required one would be.
   @spec optional_suffix(String.t(), name(), String.t()) ::
-          {:ok, String.t()} | {:error, ArgumentError.t()}
+          {:ok, String.t()} | {:error, Helpers.argument_error()}
   defp optional_suffix(base, nil, _label) do
     {:ok, base}
   end

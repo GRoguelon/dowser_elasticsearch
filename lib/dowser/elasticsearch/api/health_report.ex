@@ -90,7 +90,8 @@ defmodule Dowser.Elasticsearch.HealthReport do
   # the path segment up as a single indicator name and answers a comma-joined
   # list with a 404 — so a list of several is refused here rather than at the
   # cluster, as an error the non-bang variant can return.
-  @spec feature_path(String.t(), feature()) :: {:ok, String.t()} | {:error, ArgumentError.t()}
+  @spec feature_path(String.t(), feature()) ::
+          {:ok, String.t()} | {:error, Helpers.argument_error()}
   defp feature_path(base, feature) when feature in [nil, ""] do
     {:ok, base}
   end

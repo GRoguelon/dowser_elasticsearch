@@ -356,7 +356,7 @@ should work, since the wrapped endpoints are stable across releases.
 ### Endpoint coverage
 
 Elasticsearch groups its API into tags, and each supported tag maps to one
-module under `Dowser.Elasticsearch`. Every endpoint of a supported tag is
+`Dowser.Elasticsearch.*` module. Every endpoint of a supported tag is
 implemented, each as a pair of functions (`search/2` and `search!/2`).
 
 | Endpoint tag                          | Supported | Module         |
@@ -405,6 +405,18 @@ implemented, each as a pair of functions (`search/2` and `search!/2`).
 | Transform                             | ❌         |                |
 | Usage                                 | ✅         | `XPack`        |
 | Watcher                               | ❌         |                |
+
+## Development
+
+```sh
+mix deps.get
+mix test
+mix lint    # format --check-formatted, credo --strict, dialyzer
+```
+
+`mix lint` runs the three checks this project keeps green. Dialyzer's PLTs are
+built into `priv/plts/` on the first run, which takes a couple of minutes; the
+runs after that are seconds.
 
 ## Trademark Notice
 

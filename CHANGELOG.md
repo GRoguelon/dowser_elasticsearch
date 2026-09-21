@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Credo and Dialyzer run over the library.** `credo` and `dialyxir` are dev
+  and test dependencies, `.credo.exs` is checked in, and `mix lint` runs
+  `mix format --check-formatted`, `mix credo --strict` and `mix dialyzer`
+  together — all three green. Nothing about the published package changes:
+  both are `runtime: false`, and the PLTs live in the git-ignored
+  `priv/plts/`. The specs that named the non-existent `ArgumentError.t()` now
+  say `Dowser.Elasticsearch.Helpers.argument_error()`.
+
 - **A missing or empty required argument is an error, not an exception.**
   `Dowser.Elasticsearch.Index`, `.Document` and `.Search` raised
   `ArgumentError` straight out of their non-bang functions when the index (or

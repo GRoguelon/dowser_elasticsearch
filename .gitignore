@@ -27,3 +27,7 @@ dowser_elasticsearch-*.tar
 
 # Ignore Claude Code files
 CLAUDE.md
+
+# Dialyzer PLTs
+/priv/plts/*.plt
+/priv/plts/*.plt.hash

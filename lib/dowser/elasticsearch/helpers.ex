@@ -5,6 +5,14 @@ defmodule Dowser.Elasticsearch.Helpers do
   alias Dowser.Elasticsearch.Error
   alias Dowser.Elasticsearch.Index
 
+  ## Typespecs
+
+  @typedoc """
+  The error a bad argument is reported as — returned by the non-bang API
+  functions, raised by the bang ones.
+  """
+  @type argument_error :: %ArgumentError{}
+
   ## Public functions
 
   @doc """
@@ -78,7 +86,7 @@ defmodule Dowser.Elasticsearch.Helpers do
   a bad argument reaches the caller the same way a bad response does, as the
   `{:error, exception}` a non-bang function returns and a bang one raises.
   """
-  @spec required_path(Index.t(), String.t()) :: {:ok, binary()} | {:error, ArgumentError.t()}
+  @spec required_path(Index.t(), String.t()) :: {:ok, binary()} | {:error, argument_error()}
   def required_path(index, suffix) do
     case Index.segment(index) do
       nil ->
@@ -95,7 +103,7 @@ defmodule Dowser.Elasticsearch.Helpers do
   `{:error, %ArgumentError{}}` naming `label` when the value is empty.
   """
   @spec required_segment(Index.name(), String.t()) ::
-          {:ok, binary()} | {:error, ArgumentError.t()}
+          {:ok, binary()} | {:error, argument_error()}
   def required_segment(value, label) do
     case Index.segment(value) do
       nil ->

@@ -628,7 +628,7 @@ defmodule Dowser.Elasticsearch.Cluster do
   # first: `/_cluster/state/{metric}/{index}` and
   # `/_nodes/stats/{metric}/{index_metric}`.
   @spec nested_path(String.t(), {name(), atom()}, {name(), atom()}) ::
-          {:ok, String.t()} | {:error, ArgumentError.t()}
+          {:ok, String.t()} | {:error, Helpers.argument_error()}
   defp nested_path(base, {outer, outer_key}, {inner, inner_key}) do
     case {Index.segment(outer), Index.segment(inner)} do
       {nil, nil} ->

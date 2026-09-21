@@ -12,6 +12,8 @@ defmodule DowserElasticsearch.MixProject do
       elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,
       deps: deps(),
+      aliases: aliases(),
+      dialyzer: dialyzer(),
       package: package(),
       name: "Dowser.Elasticsearch",
       description: "Elixir client for the Elasticsearch API, built on top of Dowser.Client",
@@ -30,6 +32,21 @@ defmodule DowserElasticsearch.MixProject do
 
   defp elixirc_paths(:test), do: ["lib", "test/support"]
   defp elixirc_paths(_env), do: ["lib"]
+
+  defp aliases do
+    [
+      lint: ["format --check-formatted", "credo --strict", "dialyzer"]
+    ]
+  end
+
+  defp dialyzer do
+    [
+      plt_local_path: "priv/plts",
+      plt_core_path: "priv/plts",
+      plt_add_apps: [:mix, :ex_unit],
+      flags: [:error_handling, :extra_return, :missing_return]
+    ]
+  end
 
   defp package do
     [
@@ -56,11 +73,17 @@ defmodule DowserElasticsearch.MixProject do
       skip_undefined_reference_warnings_on: ["CHANGELOG.md", "UPGRADE_0_2.md"],
       groups_for_modules: [
         API: [
+          Dowser.Elasticsearch.Cat,
+          Dowser.Elasticsearch.Cluster,
           Dowser.Elasticsearch.Document,
-          Dowser.Elasticsearch.Streamer,
+          Dowser.Elasticsearch.HealthReport,
           Dowser.Elasticsearch.Index,
+          Dowser.Elasticsearch.Info,
+          Dowser.Elasticsearch.Reindex,
+          Dowser.Elasticsearch.Repository,
           Dowser.Elasticsearch.Search,
-          Dowser.Elasticsearch.Repository
+          Dowser.Elasticsearch.Streamer,
+          Dowser.Elasticsearch.XPack
         ],
         "Type casting": [
           Dowser.Elasticsearch.Codec,
@@ -82,6 +105,8 @@ defmodule DowserElasticsearch.MixProject do
       {:dowser_client, "~> 0.2.1"},
 
       ## Dev
+      {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
+      {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
       {:ex_doc, "~> 0.34", only: :dev, runtime: false, warn_if_outdated: true}
     ]
   end
