@@ -56,8 +56,13 @@ defmodule Dowser.Elasticsearch.DocumentTest do
     end
 
     test "index/3 requires an index" do
+      assert {:error, %ArgumentError{} = error} = Document.index(%{}, nil)
+      assert Exception.message(error) =~ "requires an index"
+    end
+
+    test "index!/3 raises when the index is missing" do
       assert_raise ArgumentError, ~r/requires an index/, fn ->
-        Document.index(%{}, nil)
+        Document.index!(%{}, nil)
       end
     end
 

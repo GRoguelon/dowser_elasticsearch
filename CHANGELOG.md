@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.3.0] - Unreleased
 
+### Changed
+
+- **A missing or empty required argument is an error, not an exception.**
+  `Dowser.Elasticsearch.Index`, `.Document` and `.Search` raised
+  `ArgumentError` straight out of their non-bang functions when the index (or
+  another required path parameter) was empty — the one failure that didn't
+  follow the `{:ok, _}` / `{:error, _}` contract the rest of the response path
+  does. It is now returned like any other: `{:error, %ArgumentError{}}` from
+  the non-bang function, raised by the bang one, and still before any request
+  reaches the cluster.
+
+  ```elixir
+  Dowser.Elasticsearch.Index.create_index(%{}, nil)
+  #=> {:error, %ArgumentError{message: "this endpoint requires an index, got: nil"}}
+
+  Dowser.Elasticsearch.Index.create_index!(%{}, nil)
+  ** (ArgumentError) this endpoint requires an index, got: nil
+  ```
+
+  Code that relied on the non-bang variants raising — a `try/rescue`, or a
+  bare call whose crash was the error handling — now gets an `{:error, _}`
+  tuple instead. Code that already matched on the return value, and every bang
+  variant, is unaffected. The `use`-time validation in
+  `Dowser.Elasticsearch.Repository` and the `slice` option check in
+  `Dowser.Elasticsearch.Streamer` still raise: neither is a request.
+
 ### Added
 
 - `Dowser.Elasticsearch.Info` — the endpoints tagged `info` in the

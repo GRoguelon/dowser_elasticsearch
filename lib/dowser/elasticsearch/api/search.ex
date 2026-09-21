@@ -34,8 +34,10 @@ defmodule Dowser.Elasticsearch.Search do
   On a 2xx response every function returns `{:ok, body}` with the decoded
   response body. A non-2xx response returns
   `{:error, %Dowser.Elasticsearch.Error{}}`; a transport, encoding or decoding
-  failure returns `{:error, exception}` from `Dowser.Client`. Each function has
-  a bang variant that returns the body directly or raises the error exception.
+  failure returns `{:error, exception}` from `Dowser.Client`. A required
+  argument that is missing or empty is reported the same way, before any
+  request is made: `{:error, %ArgumentError{}}`. Each function has a bang
+  variant that returns the body directly or raises the error exception.
   """
 
   alias Dowser.Elasticsearch.Client
@@ -166,10 +168,11 @@ defmodule Dowser.Elasticsearch.Search do
   """
   @spec explain(query(), index(), id(), keyword()) :: result()
   def explain(%{} = query, index, id, opts \\ []) do
-    index
-    |> Helpers.required_path("/_explain/" <> URI.encode(id))
-    |> Client.post(query, opts)
-    |> Helpers.parse_result()
+    with {:ok, path} <- Helpers.required_path(index, "/_explain/" <> URI.encode(id)) do
+      path
+      |> Client.post(query, opts)
+      |> Helpers.parse_result()
+    end
   end
 
   @doc """
@@ -246,10 +249,11 @@ defmodule Dowser.Elasticsearch.Search do
   """
   @spec terms_enum(map(), index(), keyword()) :: result()
   def terms_enum(%{} = body, index, opts \\ []) do
-    index
-    |> Helpers.required_path("/_terms_enum")
-    |> Client.post(body, opts)
-    |> Helpers.parse_result()
+    with {:ok, path} <- Helpers.required_path(index, "/_terms_enum") do
+      path
+      |> Client.post(body, opts)
+      |> Helpers.parse_result()
+    end
   end
 
   @doc """
@@ -274,10 +278,12 @@ defmodule Dowser.Elasticsearch.Search do
   def search_mvt(%{} = body, index, field, zoom, x, y, opts \\ []) do
     opts = Helpers.put_default_format(opts, :resp_format, :raw)
 
-    index
-    |> Helpers.required_path("/_mvt/#{URI.encode(field)}/#{zoom}/#{x}/#{y}")
-    |> Client.post(body, opts)
-    |> Helpers.parse_result()
+    with {:ok, path} <-
+           Helpers.required_path(index, "/_mvt/#{URI.encode(field)}/#{zoom}/#{x}/#{y}") do
+      path
+      |> Client.post(body, opts)
+      |> Helpers.parse_result()
+    end
   end
 
   @doc """
@@ -578,10 +584,11 @@ defmodule Dowser.Elasticsearch.Search do
   def open_point_in_time(%{} = body, index, keep_alive, opts \\ []) do
     opts = Helpers.put_param(opts, :keep_alive, keep_alive)
 
-    index
-    |> Helpers.required_path("/_pit")
-    |> Client.post(body, opts)
-    |> Helpers.parse_result()
+    with {:ok, path} <- Helpers.required_path(index, "/_pit") do
+      path
+      |> Client.post(body, opts)
+      |> Helpers.parse_result()
+    end
   end
 
   @doc """

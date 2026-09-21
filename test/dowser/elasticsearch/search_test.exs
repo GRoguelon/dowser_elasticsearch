@@ -211,9 +211,8 @@ defmodule Dowser.Elasticsearch.SearchTest do
     end
 
     test "requires an index" do
-      assert_raise ArgumentError, ~r/requires an index/, fn ->
-        Search.terms_enum(%{"field" => "title"}, nil)
-      end
+      assert {:error, %ArgumentError{} = error} = Search.terms_enum(%{"field" => "title"}, nil)
+      assert Exception.message(error) =~ "requires an index"
     end
   end
 
@@ -382,8 +381,13 @@ defmodule Dowser.Elasticsearch.SearchTest do
     end
 
     test "open_point_in_time/4 requires an index" do
+      assert {:error, %ArgumentError{} = error} = Search.open_point_in_time(%{}, nil, "1m")
+      assert Exception.message(error) =~ "requires an index"
+    end
+
+    test "open_point_in_time!/4 raises when the index is missing" do
       assert_raise ArgumentError, ~r/requires an index/, fn ->
-        Search.open_point_in_time(%{}, nil, "1m")
+        Search.open_point_in_time!(%{}, nil, "1m")
       end
     end
 

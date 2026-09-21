@@ -36,8 +36,10 @@ defmodule Dowser.Elasticsearch.Document do
   On a 2xx response every function returns `{:ok, body}` with the decoded
   response body. A non-2xx response returns
   `{:error, %Dowser.Elasticsearch.Error{}}`; a transport, encoding or decoding
-  failure returns `{:error, exception}` from `Dowser.Client`. Each function has
-  a bang variant that returns the body directly or raises the error exception.
+  failure returns `{:error, exception}` from `Dowser.Client`. A required
+  argument that is missing or empty is reported the same way, before any
+  request is made: `{:error, %ArgumentError{}}`. Each function has a bang
+  variant that returns the body directly or raises the error exception.
   """
 
   alias Dowser.Elasticsearch.Client
@@ -84,10 +86,11 @@ defmodule Dowser.Elasticsearch.Document do
         "/_doc"
       end
 
-    index
-    |> Helpers.required_path(suffix)
-    |> Client.post(document, opts)
-    |> Helpers.parse_result()
+    with {:ok, path} <- Helpers.required_path(index, suffix) do
+      path
+      |> Client.post(document, opts)
+      |> Helpers.parse_result()
+    end
   end
 
   @doc """
@@ -108,10 +111,11 @@ defmodule Dowser.Elasticsearch.Document do
   def create(%{} = document, index, id, opts \\ []) do
     opts = Client.put_encoder(opts, [index: index], true)
 
-    index
-    |> Helpers.required_path("/_create/" <> URI.encode(id))
-    |> Client.post(document, opts)
-    |> Helpers.parse_result()
+    with {:ok, path} <- Helpers.required_path(index, "/_create/" <> URI.encode(id)) do
+      path
+      |> Client.post(document, opts)
+      |> Helpers.parse_result()
+    end
   end
 
   @doc """
@@ -128,10 +132,11 @@ defmodule Dowser.Elasticsearch.Document do
   """
   @spec get(index(), id(), keyword()) :: result()
   def get(index, id, opts \\ []) do
-    index
-    |> Helpers.required_path("/_doc/" <> URI.encode(id))
-    |> Client.get(opts)
-    |> Helpers.parse_result()
+    with {:ok, path} <- Helpers.required_path(index, "/_doc/" <> URI.encode(id)) do
+      path
+      |> Client.get(opts)
+      |> Helpers.parse_result()
+    end
   end
 
   @doc """
@@ -148,10 +153,11 @@ defmodule Dowser.Elasticsearch.Document do
   """
   @spec delete(index(), id(), keyword()) :: result()
   def delete(index, id, opts \\ []) do
-    index
-    |> Helpers.required_path("/_doc/" <> URI.encode(id))
-    |> Client.delete(nil, opts)
-    |> Helpers.parse_result()
+    with {:ok, path} <- Helpers.required_path(index, "/_doc/" <> URI.encode(id)) do
+      path
+      |> Client.delete(nil, opts)
+      |> Helpers.parse_result()
+    end
   end
 
   @doc """
@@ -170,9 +176,10 @@ defmodule Dowser.Elasticsearch.Document do
   """
   @spec exists(index(), id(), keyword()) :: exists_result()
   def exists(index, id, opts \\ []) do
-    index
-    |> Helpers.required_path("/_doc/" <> URI.encode(id))
-    |> head(opts)
+    with {:ok, path} <- Helpers.required_path(index, "/_doc/" <> URI.encode(id)) do
+      path
+      |> head(opts)
+    end
   end
 
   @doc """
@@ -192,10 +199,11 @@ defmodule Dowser.Elasticsearch.Document do
   def get_source(index, id, opts \\ []) do
     opts = Client.put_decoder(opts, index: index, source: true)
 
-    index
-    |> Helpers.required_path("/_source/" <> URI.encode(id))
-    |> Client.get(opts)
-    |> Helpers.parse_result()
+    with {:ok, path} <- Helpers.required_path(index, "/_source/" <> URI.encode(id)) do
+      path
+      |> Client.get(opts)
+      |> Helpers.parse_result()
+    end
   end
 
   @doc """
@@ -215,9 +223,10 @@ defmodule Dowser.Elasticsearch.Document do
   """
   @spec source_exists(index(), id(), keyword()) :: exists_result()
   def source_exists(index, id, opts \\ []) do
-    index
-    |> Helpers.required_path("/_source/" <> URI.encode(id))
-    |> head(opts)
+    with {:ok, path} <- Helpers.required_path(index, "/_source/" <> URI.encode(id)) do
+      path
+      |> head(opts)
+    end
   end
 
   @doc """
@@ -240,10 +249,11 @@ defmodule Dowser.Elasticsearch.Document do
   def update(%{} = body, index, id, opts \\ []) do
     opts = Client.put_encoder(opts, [index: index], @update_sources)
 
-    index
-    |> Helpers.required_path("/_update/" <> URI.encode(id))
-    |> Client.post(body, opts)
-    |> Helpers.parse_result()
+    with {:ok, path} <- Helpers.required_path(index, "/_update/" <> URI.encode(id)) do
+      path
+      |> Client.post(body, opts)
+      |> Helpers.parse_result()
+    end
   end
 
   @doc """
@@ -339,10 +349,11 @@ defmodule Dowser.Elasticsearch.Document do
   """
   @spec delete_by_query(map(), index(), keyword()) :: result()
   def delete_by_query(%{} = query, index, opts \\ []) do
-    index
-    |> Helpers.required_path("/_delete_by_query")
-    |> Client.post(query, opts)
-    |> Helpers.parse_result()
+    with {:ok, path} <- Helpers.required_path(index, "/_delete_by_query") do
+      path
+      |> Client.post(query, opts)
+      |> Helpers.parse_result()
+    end
   end
 
   @doc """
@@ -363,10 +374,11 @@ defmodule Dowser.Elasticsearch.Document do
   """
   @spec update_by_query(map(), index(), keyword()) :: result()
   def update_by_query(%{} = body, index, opts \\ []) do
-    index
-    |> Helpers.required_path("/_update_by_query")
-    |> Client.post(body, opts)
-    |> Helpers.parse_result()
+    with {:ok, path} <- Helpers.required_path(index, "/_update_by_query") do
+      path
+      |> Client.post(body, opts)
+      |> Helpers.parse_result()
+    end
   end
 
   @doc """
@@ -487,10 +499,11 @@ defmodule Dowser.Elasticsearch.Document do
         "/_termvectors"
       end
 
-    index
-    |> Helpers.required_path(suffix)
-    |> Client.post(body, opts)
-    |> Helpers.parse_result()
+    with {:ok, path} <- Helpers.required_path(index, suffix) do
+      path
+      |> Client.post(body, opts)
+      |> Helpers.parse_result()
+    end
   end
 
   @doc """

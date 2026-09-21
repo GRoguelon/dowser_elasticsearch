@@ -52,9 +52,24 @@ defmodule Dowser.Elasticsearch.IndexTest do
     end
 
     test "create_index/3 requires an index" do
+      assert {:error, %ArgumentError{} = error} = Index.create_index(%{}, nil)
+      assert Exception.message(error) =~ "requires an index"
+    end
+
+    test "create_index!/3 raises when the index is missing" do
       assert_raise ArgumentError, ~r/requires an index/, fn ->
-        Index.create_index(%{}, nil)
+        Index.create_index!(%{}, nil)
       end
+    end
+
+    test "get_settings/1 reports an empty :name" do
+      assert {:error, %ArgumentError{} = error} = Index.get_settings(name: "")
+      assert Exception.message(error) =~ "name is required"
+    end
+
+    test "rollover/3 requires a target" do
+      assert {:error, %ArgumentError{} = error} = Index.rollover(%{}, nil)
+      assert Exception.message(error) =~ "target is required"
     end
 
     test "delete_index/2 DELETEs /{index}" do

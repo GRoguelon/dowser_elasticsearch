@@ -32,8 +32,10 @@ defmodule Dowser.Elasticsearch.Index do
   On a 2xx response every function returns `{:ok, body}` with the decoded
   response body. A non-2xx response returns
   `{:error, %Dowser.Elasticsearch.Error{}}`; a transport, encoding or decoding
-  failure returns `{:error, exception}` from `Dowser.Client`. Each function has
-  a bang variant that returns the body directly or raises the error exception.
+  failure returns `{:error, exception}` from `Dowser.Client`. A required
+  argument that is missing or empty is reported the same way, before any
+  request is made: `{:error, %ArgumentError{}}`. Each function has a bang
+  variant that returns the body directly or raises the error exception.
   """
 
   alias Dowser.Elasticsearch.Client
@@ -108,10 +110,11 @@ defmodule Dowser.Elasticsearch.Index do
   """
   @spec create_index(map(), t(), keyword()) :: result()
   def create_index(%{} = body, index, opts \\ []) do
-    index
-    |> Helpers.required_path("")
-    |> Client.put(body, opts)
-    |> Helpers.parse_result()
+    with {:ok, path} <- Helpers.required_path(index, "") do
+      path
+      |> Client.put(body, opts)
+      |> Helpers.parse_result()
+    end
   end
 
   @doc """
@@ -129,10 +132,11 @@ defmodule Dowser.Elasticsearch.Index do
   """
   @spec delete_index(t(), keyword()) :: result()
   def delete_index(index, opts \\ []) do
-    index
-    |> Helpers.required_path("")
-    |> Client.delete(nil, opts)
-    |> Helpers.parse_result()
+    with {:ok, path} <- Helpers.required_path(index, "") do
+      path
+      |> Client.delete(nil, opts)
+      |> Helpers.parse_result()
+    end
   end
 
   @doc """
@@ -150,10 +154,11 @@ defmodule Dowser.Elasticsearch.Index do
   """
   @spec get_index(t(), keyword()) :: result()
   def get_index(index, opts \\ []) do
-    index
-    |> Helpers.required_path("")
-    |> Client.get(opts)
-    |> Helpers.parse_result()
+    with {:ok, path} <- Helpers.required_path(index, "") do
+      path
+      |> Client.get(opts)
+      |> Helpers.parse_result()
+    end
   end
 
   @doc """
@@ -173,9 +178,10 @@ defmodule Dowser.Elasticsearch.Index do
   """
   @spec index_exists(t(), keyword()) :: exists_result()
   def index_exists(index, opts \\ []) do
-    index
-    |> Helpers.required_path("")
-    |> exists(opts)
+    with {:ok, path} <- Helpers.required_path(index, "") do
+      path
+      |> exists(opts)
+    end
   end
 
   @doc """
@@ -193,10 +199,11 @@ defmodule Dowser.Elasticsearch.Index do
   """
   @spec open(t(), keyword()) :: result()
   def open(index, opts \\ []) do
-    index
-    |> Helpers.required_path("/_open")
-    |> Client.post(nil, opts)
-    |> Helpers.parse_result()
+    with {:ok, path} <- Helpers.required_path(index, "/_open") do
+      path
+      |> Client.post(nil, opts)
+      |> Helpers.parse_result()
+    end
   end
 
   @doc """
@@ -213,10 +220,11 @@ defmodule Dowser.Elasticsearch.Index do
   """
   @spec close(t(), keyword()) :: result()
   def close(index, opts \\ []) do
-    index
-    |> Helpers.required_path("/_close")
-    |> Client.post(nil, opts)
-    |> Helpers.parse_result()
+    with {:ok, path} <- Helpers.required_path(index, "/_close") do
+      path
+      |> Client.post(nil, opts)
+      |> Helpers.parse_result()
+    end
   end
 
   @doc """
@@ -234,10 +242,12 @@ defmodule Dowser.Elasticsearch.Index do
   """
   @spec add_block(t(), name(), keyword()) :: result()
   def add_block(index, block, opts \\ []) do
-    index
-    |> Helpers.required_path("/_block/" <> segment!(block, "block"))
-    |> Client.put(nil, opts)
-    |> Helpers.parse_result()
+    with {:ok, block_segment} <- Helpers.required_segment(block, "block"),
+         {:ok, path} <- Helpers.required_path(index, "/_block/" <> block_segment) do
+      path
+      |> Client.put(nil, opts)
+      |> Helpers.parse_result()
+    end
   end
 
   @doc """
@@ -255,10 +265,12 @@ defmodule Dowser.Elasticsearch.Index do
   """
   @spec remove_block(t(), name(), keyword()) :: result()
   def remove_block(index, block, opts \\ []) do
-    index
-    |> Helpers.required_path("/_block/" <> segment!(block, "block"))
-    |> Client.delete(nil, opts)
-    |> Helpers.parse_result()
+    with {:ok, block_segment} <- Helpers.required_segment(block, "block"),
+         {:ok, path} <- Helpers.required_path(index, "/_block/" <> block_segment) do
+      path
+      |> Client.delete(nil, opts)
+      |> Helpers.parse_result()
+    end
   end
 
   @doc """
@@ -280,10 +292,11 @@ defmodule Dowser.Elasticsearch.Index do
   """
   @spec put_mapping(map(), t(), keyword()) :: result()
   def put_mapping(%{} = mapping, index, opts \\ []) do
-    index
-    |> Helpers.required_path("/_mapping")
-    |> Client.post(mapping, opts)
-    |> Helpers.parse_result()
+    with {:ok, path} <- Helpers.required_path(index, "/_mapping") do
+      path
+      |> Client.post(mapping, opts)
+      |> Helpers.parse_result()
+    end
   end
 
   @doc """
@@ -334,10 +347,12 @@ defmodule Dowser.Elasticsearch.Index do
   def get_field_mapping(fields, opts \\ []) do
     {index, opts} = Keyword.pop(opts, :index)
 
-    index
-    |> Helpers.path("/_mapping/field/" <> segment!(fields, "fields"))
-    |> Client.get(opts)
-    |> Helpers.parse_result()
+    with {:ok, fields_segment} <- Helpers.required_segment(fields, "fields") do
+      index
+      |> Helpers.path("/_mapping/field/" <> fields_segment)
+      |> Client.get(opts)
+      |> Helpers.parse_result()
+    end
   end
 
   @doc """
@@ -394,17 +409,12 @@ defmodule Dowser.Elasticsearch.Index do
     {index, opts} = Keyword.pop(opts, :index)
     {name, opts} = Keyword.pop(opts, :name)
 
-    suffix =
-      if name do
-        "/_settings/" <> segment!(name, "name")
-      else
-        "/_settings"
-      end
-
-    index
-    |> Helpers.path(suffix)
-    |> Client.get(opts)
-    |> Helpers.parse_result()
+    with {:ok, suffix} <- optional_suffix("/_settings", name, "name") do
+      index
+      |> Helpers.path(suffix)
+      |> Client.get(opts)
+      |> Helpers.parse_result()
+    end
   end
 
   @doc """
@@ -450,10 +460,12 @@ defmodule Dowser.Elasticsearch.Index do
   """
   @spec put_alias(map(), t(), name(), keyword()) :: result()
   def put_alias(%{} = body, index, name, opts \\ []) do
-    index
-    |> Helpers.required_path("/_aliases/" <> segment!(name, "name"))
-    |> Client.post(body, opts)
-    |> Helpers.parse_result()
+    with {:ok, name_segment} <- Helpers.required_segment(name, "name"),
+         {:ok, path} <- Helpers.required_path(index, "/_aliases/" <> name_segment) do
+      path
+      |> Client.post(body, opts)
+      |> Helpers.parse_result()
+    end
   end
 
   @doc """
@@ -471,10 +483,12 @@ defmodule Dowser.Elasticsearch.Index do
   """
   @spec delete_alias(t(), name(), keyword()) :: result()
   def delete_alias(index, name, opts \\ []) do
-    index
-    |> Helpers.required_path("/_aliases/" <> segment!(name, "name"))
-    |> Client.delete(nil, opts)
-    |> Helpers.parse_result()
+    with {:ok, name_segment} <- Helpers.required_segment(name, "name"),
+         {:ok, path} <- Helpers.required_path(index, "/_aliases/" <> name_segment) do
+      path
+      |> Client.delete(nil, opts)
+      |> Helpers.parse_result()
+    end
   end
 
   @doc """
@@ -500,17 +514,12 @@ defmodule Dowser.Elasticsearch.Index do
     {index, opts} = Keyword.pop(opts, :index)
     {name, opts} = Keyword.pop(opts, :name)
 
-    suffix =
-      if name do
-        "/_alias/" <> segment!(name, "name")
-      else
-        "/_alias"
-      end
-
-    index
-    |> Helpers.path(suffix)
-    |> Client.get(opts)
-    |> Helpers.parse_result()
+    with {:ok, suffix} <- optional_suffix("/_alias", name, "name") do
+      index
+      |> Helpers.path(suffix)
+      |> Client.get(opts)
+      |> Helpers.parse_result()
+    end
   end
 
   @doc """
@@ -536,9 +545,11 @@ defmodule Dowser.Elasticsearch.Index do
   def alias_exists(name, opts \\ []) do
     {index, opts} = Keyword.pop(opts, :index)
 
-    index
-    |> Helpers.path("/_alias/" <> segment!(name, "name"))
-    |> exists(opts)
+    with {:ok, name_segment} <- Helpers.required_segment(name, "name") do
+      index
+      |> Helpers.path("/_alias/" <> name_segment)
+      |> exists(opts)
+    end
   end
 
   @doc """
@@ -560,9 +571,11 @@ defmodule Dowser.Elasticsearch.Index do
   """
   @spec put_index_template(map(), name(), keyword()) :: result()
   def put_index_template(%{} = template, name, opts \\ []) do
-    ("/_index_template/" <> segment!(name, "name"))
-    |> Client.post(template, opts)
-    |> Helpers.parse_result()
+    with {:ok, name_segment} <- Helpers.required_segment(name, "name") do
+      ("/_index_template/" <> name_segment)
+      |> Client.post(template, opts)
+      |> Helpers.parse_result()
+    end
   end
 
   @doc """
@@ -580,9 +593,11 @@ defmodule Dowser.Elasticsearch.Index do
   """
   @spec get_index_template(name(), keyword()) :: result()
   def get_index_template(name, opts \\ []) do
-    ("/_index_template/" <> segment!(name, "name"))
-    |> Client.get(opts)
-    |> Helpers.parse_result()
+    with {:ok, name_segment} <- Helpers.required_segment(name, "name") do
+      ("/_index_template/" <> name_segment)
+      |> Client.get(opts)
+      |> Helpers.parse_result()
+    end
   end
 
   @doc """
@@ -600,9 +615,11 @@ defmodule Dowser.Elasticsearch.Index do
   """
   @spec delete_index_template(name(), keyword()) :: result()
   def delete_index_template(name, opts \\ []) do
-    ("/_index_template/" <> segment!(name, "name"))
-    |> Client.delete(nil, opts)
-    |> Helpers.parse_result()
+    with {:ok, name_segment} <- Helpers.required_segment(name, "name") do
+      ("/_index_template/" <> name_segment)
+      |> Client.delete(nil, opts)
+      |> Helpers.parse_result()
+    end
   end
 
   @doc """
@@ -622,8 +639,10 @@ defmodule Dowser.Elasticsearch.Index do
   """
   @spec index_template_exists(name(), keyword()) :: exists_result()
   def index_template_exists(name, opts \\ []) do
-    ("/_index_template/" <> segment!(name, "name"))
-    |> exists(opts)
+    with {:ok, name_segment} <- Helpers.required_segment(name, "name") do
+      ("/_index_template/" <> name_segment)
+      |> exists(opts)
+    end
   end
 
   @doc """
@@ -644,9 +663,11 @@ defmodule Dowser.Elasticsearch.Index do
   """
   @spec simulate_index_template(map(), name(), keyword()) :: result()
   def simulate_index_template(%{} = body, name, opts \\ []) do
-    ("/_index_template/_simulate_index/" <> segment!(name, "name"))
-    |> Client.post(body, opts)
-    |> Helpers.parse_result()
+    with {:ok, name_segment} <- Helpers.required_segment(name, "name") do
+      ("/_index_template/_simulate_index/" <> name_segment)
+      |> Client.post(body, opts)
+      |> Helpers.parse_result()
+    end
   end
 
   @doc """
@@ -667,9 +688,11 @@ defmodule Dowser.Elasticsearch.Index do
   """
   @spec simulate_template(map(), name(), keyword()) :: result()
   def simulate_template(%{} = body, name, opts \\ []) do
-    ("/_index_template/_simulate/" <> segment!(name, "name"))
-    |> Client.post(body, opts)
-    |> Helpers.parse_result()
+    with {:ok, name_segment} <- Helpers.required_segment(name, "name") do
+      ("/_index_template/_simulate/" <> name_segment)
+      |> Client.post(body, opts)
+      |> Helpers.parse_result()
+    end
   end
 
   @doc """
@@ -691,9 +714,11 @@ defmodule Dowser.Elasticsearch.Index do
   """
   @spec put_component_template(map(), name(), keyword()) :: result()
   def put_component_template(%{} = template, name, opts \\ []) do
-    ("/_component_template/" <> segment!(name, "name"))
-    |> Client.post(template, opts)
-    |> Helpers.parse_result()
+    with {:ok, name_segment} <- Helpers.required_segment(name, "name") do
+      ("/_component_template/" <> name_segment)
+      |> Client.post(template, opts)
+      |> Helpers.parse_result()
+    end
   end
 
   @doc """
@@ -711,9 +736,11 @@ defmodule Dowser.Elasticsearch.Index do
   """
   @spec get_component_template(name(), keyword()) :: result()
   def get_component_template(name, opts \\ []) do
-    ("/_component_template/" <> segment!(name, "name"))
-    |> Client.get(opts)
-    |> Helpers.parse_result()
+    with {:ok, name_segment} <- Helpers.required_segment(name, "name") do
+      ("/_component_template/" <> name_segment)
+      |> Client.get(opts)
+      |> Helpers.parse_result()
+    end
   end
 
   @doc """
@@ -731,9 +758,11 @@ defmodule Dowser.Elasticsearch.Index do
   """
   @spec delete_component_template(name(), keyword()) :: result()
   def delete_component_template(name, opts \\ []) do
-    ("/_component_template/" <> segment!(name, "name"))
-    |> Client.delete(nil, opts)
-    |> Helpers.parse_result()
+    with {:ok, name_segment} <- Helpers.required_segment(name, "name") do
+      ("/_component_template/" <> name_segment)
+      |> Client.delete(nil, opts)
+      |> Helpers.parse_result()
+    end
   end
 
   @doc """
@@ -753,8 +782,10 @@ defmodule Dowser.Elasticsearch.Index do
   """
   @spec component_template_exists(name(), keyword()) :: exists_result()
   def component_template_exists(name, opts \\ []) do
-    ("/_component_template/" <> segment!(name, "name"))
-    |> exists(opts)
+    with {:ok, name_segment} <- Helpers.required_segment(name, "name") do
+      ("/_component_template/" <> name_segment)
+      |> exists(opts)
+    end
   end
 
   @doc """
@@ -775,9 +806,11 @@ defmodule Dowser.Elasticsearch.Index do
   @deprecated "Use put_index_template/3 instead"
   @spec put_template(map(), name(), keyword()) :: result()
   def put_template(%{} = template, name, opts \\ []) do
-    ("/_template/" <> segment!(name, "name"))
-    |> Client.post(template, opts)
-    |> Helpers.parse_result()
+    with {:ok, name_segment} <- Helpers.required_segment(name, "name") do
+      ("/_template/" <> name_segment)
+      |> Client.post(template, opts)
+      |> Helpers.parse_result()
+    end
   end
 
   @doc """
@@ -797,9 +830,11 @@ defmodule Dowser.Elasticsearch.Index do
   @deprecated "Use get_index_template/2 instead"
   @spec get_template(name(), keyword()) :: result()
   def get_template(name, opts \\ []) do
-    ("/_template/" <> segment!(name, "name"))
-    |> Client.get(opts)
-    |> Helpers.parse_result()
+    with {:ok, name_segment} <- Helpers.required_segment(name, "name") do
+      ("/_template/" <> name_segment)
+      |> Client.get(opts)
+      |> Helpers.parse_result()
+    end
   end
 
   @doc """
@@ -819,9 +854,11 @@ defmodule Dowser.Elasticsearch.Index do
   @deprecated "Use delete_index_template/2 instead"
   @spec delete_template(name(), keyword()) :: result()
   def delete_template(name, opts \\ []) do
-    ("/_template/" <> segment!(name, "name"))
-    |> Client.delete(nil, opts)
-    |> Helpers.parse_result()
+    with {:ok, name_segment} <- Helpers.required_segment(name, "name") do
+      ("/_template/" <> name_segment)
+      |> Client.delete(nil, opts)
+      |> Helpers.parse_result()
+    end
   end
 
   @doc """
@@ -842,8 +879,10 @@ defmodule Dowser.Elasticsearch.Index do
   """
   @spec template_exists(name(), keyword()) :: exists_result()
   def template_exists(name, opts \\ []) do
-    ("/_template/" <> segment!(name, "name"))
-    |> exists(opts)
+    with {:ok, name_segment} <- Helpers.required_segment(name, "name") do
+      ("/_template/" <> name_segment)
+      |> exists(opts)
+    end
   end
 
   @doc """
@@ -866,10 +905,12 @@ defmodule Dowser.Elasticsearch.Index do
   """
   @spec clone(map(), t(), name(), keyword()) :: result()
   def clone(%{} = body, index, target, opts \\ []) do
-    index
-    |> Helpers.required_path("/_clone/" <> segment!(target, "target"))
-    |> Client.post(body, opts)
-    |> Helpers.parse_result()
+    with {:ok, target_segment} <- Helpers.required_segment(target, "target"),
+         {:ok, path} <- Helpers.required_path(index, "/_clone/" <> target_segment) do
+      path
+      |> Client.post(body, opts)
+      |> Helpers.parse_result()
+    end
   end
 
   @doc """
@@ -889,10 +930,12 @@ defmodule Dowser.Elasticsearch.Index do
   """
   @spec shrink(map(), t(), name(), keyword()) :: result()
   def shrink(%{} = body, index, target, opts \\ []) do
-    index
-    |> Helpers.required_path("/_shrink/" <> segment!(target, "target"))
-    |> Client.post(body, opts)
-    |> Helpers.parse_result()
+    with {:ok, target_segment} <- Helpers.required_segment(target, "target"),
+         {:ok, path} <- Helpers.required_path(index, "/_shrink/" <> target_segment) do
+      path
+      |> Client.post(body, opts)
+      |> Helpers.parse_result()
+    end
   end
 
   @doc """
@@ -912,10 +955,12 @@ defmodule Dowser.Elasticsearch.Index do
   """
   @spec split(map(), t(), name(), keyword()) :: result()
   def split(%{} = body, index, target, opts \\ []) do
-    index
-    |> Helpers.required_path("/_split/" <> segment!(target, "target"))
-    |> Client.post(body, opts)
-    |> Helpers.parse_result()
+    with {:ok, target_segment} <- Helpers.required_segment(target, "target"),
+         {:ok, path} <- Helpers.required_path(index, "/_split/" <> target_segment) do
+      path
+      |> Client.post(body, opts)
+      |> Helpers.parse_result()
+    end
   end
 
   @doc """
@@ -942,18 +987,14 @@ defmodule Dowser.Elasticsearch.Index do
   @spec rollover(map(), name(), keyword()) :: result()
   def rollover(%{} = body, target, opts \\ []) do
     {new_index, opts} = Keyword.pop(opts, :new_index)
-    rollover_path = "/" <> segment!(target, "target") <> "/_rollover"
 
-    rollover_path =
-      if new_index do
-        rollover_path <> "/" <> segment!(new_index, "new_index")
-      else
-        rollover_path
-      end
-
-    rollover_path
-    |> Client.post(body, opts)
-    |> Helpers.parse_result()
+    with {:ok, target_segment} <- Helpers.required_segment(target, "target"),
+         {:ok, rollover_path} <-
+           optional_suffix("/" <> target_segment <> "/_rollover", new_index, "new_index") do
+      rollover_path
+      |> Client.post(body, opts)
+      |> Helpers.parse_result()
+    end
   end
 
   @doc """
@@ -1090,17 +1131,12 @@ defmodule Dowser.Elasticsearch.Index do
     {index, opts} = Keyword.pop(opts, :index)
     {metric, opts} = Keyword.pop(opts, :metric)
 
-    suffix =
-      if metric do
-        "/_stats/" <> segment!(metric, "metric")
-      else
-        "/_stats"
-      end
-
-    index
-    |> Helpers.path(suffix)
-    |> Client.get(opts)
-    |> Helpers.parse_result()
+    with {:ok, suffix} <- optional_suffix("/_stats", metric, "metric") do
+      index
+      |> Helpers.path(suffix)
+      |> Client.get(opts)
+      |> Helpers.parse_result()
+    end
   end
 
   @doc """
@@ -1198,10 +1234,11 @@ defmodule Dowser.Elasticsearch.Index do
   """
   @spec disk_usage(t(), keyword()) :: result()
   def disk_usage(index, opts \\ []) do
-    index
-    |> Helpers.required_path("/_disk_usage")
-    |> Client.post(nil, opts)
-    |> Helpers.parse_result()
+    with {:ok, path} <- Helpers.required_path(index, "/_disk_usage") do
+      path
+      |> Client.post(nil, opts)
+      |> Helpers.parse_result()
+    end
   end
 
   @doc """
@@ -1219,10 +1256,11 @@ defmodule Dowser.Elasticsearch.Index do
   """
   @spec field_usage_stats(t(), keyword()) :: result()
   def field_usage_stats(index, opts \\ []) do
-    index
-    |> Helpers.required_path("/_field_usage_stats")
-    |> Client.get(opts)
-    |> Helpers.parse_result()
+    with {:ok, path} <- Helpers.required_path(index, "/_field_usage_stats") do
+      path
+      |> Client.get(opts)
+      |> Helpers.parse_result()
+    end
   end
 
   @doc """
@@ -1300,10 +1338,11 @@ defmodule Dowser.Elasticsearch.Index do
   """
   @spec reload_search_analyzers(t(), keyword()) :: result()
   def reload_search_analyzers(index, opts \\ []) do
-    index
-    |> Helpers.required_path("/_reload_search_analyzers")
-    |> Client.post(nil, opts)
-    |> Helpers.parse_result()
+    with {:ok, path} <- Helpers.required_path(index, "/_reload_search_analyzers") do
+      path
+      |> Client.post(nil, opts)
+      |> Helpers.parse_result()
+    end
   end
 
   @doc """
@@ -1389,9 +1428,11 @@ defmodule Dowser.Elasticsearch.Index do
   """
   @spec resolve_index(name(), keyword()) :: result()
   def resolve_index(name, opts \\ []) do
-    ("/_resolve/index/" <> segment!(name, "name"))
-    |> Client.get(opts)
-    |> Helpers.parse_result()
+    with {:ok, name_segment} <- Helpers.required_segment(name, "name") do
+      ("/_resolve/index/" <> name_segment)
+      |> Client.get(opts)
+      |> Helpers.parse_result()
+    end
   end
 
   @doc """
@@ -1410,9 +1451,11 @@ defmodule Dowser.Elasticsearch.Index do
   """
   @spec resolve_cluster(name(), keyword()) :: result()
   def resolve_cluster(name, opts \\ []) do
-    ("/_resolve/cluster/" <> segment!(name, "name"))
-    |> Client.get(opts)
-    |> Helpers.parse_result()
+    with {:ok, name_segment} <- Helpers.required_segment(name, "name") do
+      ("/_resolve/cluster/" <> name_segment)
+      |> Client.get(opts)
+      |> Helpers.parse_result()
+    end
   end
 
   @doc """
@@ -1432,9 +1475,11 @@ defmodule Dowser.Elasticsearch.Index do
   """
   @spec delete_data_lifecycle(name(), keyword()) :: result()
   def delete_data_lifecycle(name, opts \\ []) do
-    ("/_data_stream/" <> segment!(name, "name") <> "/_lifecycle")
-    |> Client.delete(nil, opts)
-    |> Helpers.parse_result()
+    with {:ok, name_segment} <- Helpers.required_segment(name, "name") do
+      ("/_data_stream/" <> name_segment <> "/_lifecycle")
+      |> Client.delete(nil, opts)
+      |> Helpers.parse_result()
+    end
   end
 
   @doc """
@@ -1495,14 +1540,17 @@ defmodule Dowser.Elasticsearch.Index do
 
   ## Private functions
 
-  @spec segment!(name(), String.t()) :: String.t()
-  defp segment!(value, label) do
-    case segment(value) do
-      nil ->
-        raise ArgumentError, "#{label} is required, got: #{inspect(value)}"
+  # An optional path parameter appended to `base`: absent leaves `base` alone,
+  # present but empty is the same bad argument a required one would be.
+  @spec optional_suffix(String.t(), name(), String.t()) ::
+          {:ok, String.t()} | {:error, ArgumentError.t()}
+  defp optional_suffix(base, nil, _label) do
+    {:ok, base}
+  end
 
-      segment ->
-        segment
+  defp optional_suffix(base, value, label) do
+    with {:ok, segment} <- Helpers.required_segment(value, label) do
+      {:ok, base <> "/" <> segment}
     end
   end
 

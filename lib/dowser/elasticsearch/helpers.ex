@@ -57,17 +57,36 @@ defmodule Dowser.Elasticsearch.Helpers do
   end
 
   @doc """
-  Like `path/2`, but for endpoints that require an index target; raises
-  `ArgumentError` when the target is empty.
+  Like `path/2`, but for endpoints that require an index target: returns
+  `{:ok, path}`, or `{:error, %ArgumentError{}}` when the target is empty — so
+  a bad argument reaches the caller the same way a bad response does, as the
+  `{:error, exception}` a non-bang function returns and a bang one raises.
   """
-  @spec required_path(Index.t(), String.t()) :: binary()
+  @spec required_path(Index.t(), String.t()) :: {:ok, binary()} | {:error, ArgumentError.t()}
   def required_path(index, suffix) do
     case Index.segment(index) do
       nil ->
-        raise ArgumentError, "this endpoint requires an index, got: #{inspect(index)}"
+        {:error,
+         %ArgumentError{message: "this endpoint requires an index, got: #{inspect(index)}"}}
 
       segment ->
-        "/" <> segment <> suffix
+        {:ok, "/" <> segment <> suffix}
+    end
+  end
+
+  @doc """
+  Encodes a required path parameter into a path segment: `{:ok, segment}`, or
+  `{:error, %ArgumentError{}}` naming `label` when the value is empty.
+  """
+  @spec required_segment(Index.name(), String.t()) ::
+          {:ok, binary()} | {:error, ArgumentError.t()}
+  def required_segment(value, label) do
+    case Index.segment(value) do
+      nil ->
+        {:error, %ArgumentError{message: "#{label} is required, got: #{inspect(value)}"}}
+
+      segment ->
+        {:ok, segment}
     end
   end
 
