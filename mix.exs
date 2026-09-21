@@ -35,7 +35,8 @@ defmodule DowserElasticsearch.MixProject do
 
   defp aliases do
     [
-      lint: ["format --check-formatted", "credo --strict", "dialyzer"]
+      credo: ["credo --strict"],
+      lint: ["format --check-formatted", "credo", "dialyzer"]
     ]
   end
 
