@@ -35,6 +35,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `Dowser.Elasticsearch.Cluster` — every endpoint tagged `cluster` in the
+  Elasticsearch specification, which covers both the cluster itself and the
+  `_nodes` endpoints: `health/1`, `info/2`, `ping/1`, `remote_info/1`,
+  `get_settings/1`, `put_settings/2`, `state/1`, `stats/1`,
+  `pending_tasks/1`, `allocation_explain/2`, `reroute/2`,
+  `update_voting_config_exclusions/1`, `clear_voting_config_exclusions/1`,
+  `nodes_info/1`, `nodes_stats/1`, `nodes_usage/1`, `nodes_hot_threads/1`,
+  `nodes_reload_secure_settings/2`, `nodes_get_repositories_metering_info/2`
+  and `nodes_clear_repositories_metering_archive/3`.
+
+  ```elixir
+  Dowser.Elasticsearch.Cluster.health!(params: [wait_for_status: "yellow"])
+  #=> %{"status" => "yellow", "number_of_nodes" => 1, ...}
+
+  Dowser.Elasticsearch.Cluster.nodes_stats!(metric: "indices", index_metric: "docs")
+  ```
+
+  `ping/1` is the `HEAD /` check, and comes as the pair the rest of the
+  library uses for those: `{:ok, boolean()}` from `ping/1`, the bare boolean
+  from `ping?/1`. `nodes_hot_threads/1` answers in plain text, so its
+  response format defaults to `:raw`. `/_cluster/state` and
+  `/_nodes/.../stats` nest a second filter under their metric, which
+  Elasticsearch can only read as the segment after one: `:index` without
+  `:metric` (and `:index_metric` without `:metric`) returns
+  `{:error, %ArgumentError{}}` rather than a path the cluster misreads.
+
 - `Dowser.Elasticsearch.Info` — the endpoints tagged `info` in the
   Elasticsearch specification. `info/1` (`GET /`) returns the cluster's basic
   information: node name, cluster name and UUID, version and tagline — the

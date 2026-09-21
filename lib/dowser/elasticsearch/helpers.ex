@@ -57,6 +57,22 @@ defmodule Dowser.Elasticsearch.Helpers do
   end
 
   @doc """
+  Builds an endpoint path for an optional *trailing* target — the shape the
+  cluster, cat and nodes endpoints use, where `path/2` prefixes: `base` alone
+  when the target is empty, `base` + `infix` + `/{target}` otherwise.
+  """
+  @spec suffix_path(String.t(), Index.name(), String.t()) :: String.t()
+  def suffix_path(base, target, infix \\ "") do
+    case Index.segment(target) do
+      nil ->
+        base
+
+      segment ->
+        base <> infix <> "/" <> segment
+    end
+  end
+
+  @doc """
   Like `path/2`, but for endpoints that require an index target: returns
   `{:ok, path}`, or `{:error, %ArgumentError{}}` when the target is empty — so
   a bad argument reaches the caller the same way a bad response does, as the

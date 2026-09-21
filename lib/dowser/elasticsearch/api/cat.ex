@@ -113,7 +113,7 @@ defmodule Dowser.Elasticsearch.Cat do
     {index, opts} = Keyword.pop(opts, :index)
 
     "/_cat/indices"
-    |> cat_path(index)
+    |> Helpers.suffix_path(index)
     |> Client.get(opts)
     |> Helpers.parse_result()
   end
@@ -140,7 +140,7 @@ defmodule Dowser.Elasticsearch.Cat do
     {index, opts} = Keyword.pop(opts, :index)
 
     "/_cat/count"
-    |> cat_path(index)
+    |> Helpers.suffix_path(index)
     |> Client.get(opts)
     |> Helpers.parse_result()
   end
@@ -166,7 +166,7 @@ defmodule Dowser.Elasticsearch.Cat do
     {name, opts} = Keyword.pop(opts, :name)
 
     "/_cat/aliases"
-    |> cat_path(name)
+    |> Helpers.suffix_path(name)
     |> Client.get(opts)
     |> Helpers.parse_result()
   end
@@ -193,7 +193,7 @@ defmodule Dowser.Elasticsearch.Cat do
     {index, opts} = Keyword.pop(opts, :index)
 
     "/_cat/shards"
-    |> cat_path(index)
+    |> Helpers.suffix_path(index)
     |> Client.get(opts)
     |> Helpers.parse_result()
   end
@@ -219,7 +219,7 @@ defmodule Dowser.Elasticsearch.Cat do
     {index, opts} = Keyword.pop(opts, :index)
 
     "/_cat/segments"
-    |> cat_path(index)
+    |> Helpers.suffix_path(index)
     |> Client.get(opts)
     |> Helpers.parse_result()
   end
@@ -247,7 +247,7 @@ defmodule Dowser.Elasticsearch.Cat do
     {index, opts} = Keyword.pop(opts, :index)
 
     "/_cat/recovery"
-    |> cat_path(index)
+    |> Helpers.suffix_path(index)
     |> Client.get(opts)
     |> Helpers.parse_result()
   end
@@ -274,7 +274,7 @@ defmodule Dowser.Elasticsearch.Cat do
     {fields, opts} = Keyword.pop(opts, :fields)
 
     "/_cat/fielddata"
-    |> cat_path(fields)
+    |> Helpers.suffix_path(fields)
     |> Client.get(opts)
     |> Helpers.parse_result()
   end
@@ -380,7 +380,7 @@ defmodule Dowser.Elasticsearch.Cat do
     {node_id, opts} = Keyword.pop(opts, :node_id)
 
     "/_cat/allocation"
-    |> cat_path(node_id)
+    |> Helpers.suffix_path(node_id)
     |> Client.get(opts)
     |> Helpers.parse_result()
   end
@@ -408,7 +408,7 @@ defmodule Dowser.Elasticsearch.Cat do
     {patterns, opts} = Keyword.pop(opts, :circuit_breaker_patterns)
 
     "/_cat/circuit_breaker"
-    |> cat_path(patterns)
+    |> Helpers.suffix_path(patterns)
     |> Client.get(opts)
     |> Helpers.parse_result()
   end
@@ -436,7 +436,7 @@ defmodule Dowser.Elasticsearch.Cat do
     {patterns, opts} = Keyword.pop(opts, :thread_pool_patterns)
 
     "/_cat/thread_pool"
-    |> cat_path(patterns)
+    |> Helpers.suffix_path(patterns)
     |> Client.get(opts)
     |> Helpers.parse_result()
   end
@@ -525,7 +525,7 @@ defmodule Dowser.Elasticsearch.Cat do
     {name, opts} = Keyword.pop(opts, :name)
 
     "/_cat/templates"
-    |> cat_path(name)
+    |> Helpers.suffix_path(name)
     |> Client.get(opts)
     |> Helpers.parse_result()
   end
@@ -553,7 +553,7 @@ defmodule Dowser.Elasticsearch.Cat do
     {name, opts} = Keyword.pop(opts, :name)
 
     "/_cat/component_templates"
-    |> cat_path(name)
+    |> Helpers.suffix_path(name)
     |> Client.get(opts)
     |> Helpers.parse_result()
   end
@@ -603,7 +603,7 @@ defmodule Dowser.Elasticsearch.Cat do
     {repository, opts} = Keyword.pop(opts, :repository)
 
     "/_cat/snapshots"
-    |> cat_path(repository)
+    |> Helpers.suffix_path(repository)
     |> Client.get(opts)
     |> Helpers.parse_result()
   end
@@ -632,7 +632,7 @@ defmodule Dowser.Elasticsearch.Cat do
     {transform_id, opts} = Keyword.pop(opts, :transform_id)
 
     "/_cat/transforms"
-    |> cat_path(transform_id)
+    |> Helpers.suffix_path(transform_id)
     |> Client.get(opts)
     |> Helpers.parse_result()
   end
@@ -659,7 +659,7 @@ defmodule Dowser.Elasticsearch.Cat do
     {job_id, opts} = Keyword.pop(opts, :job_id)
 
     "/_cat/ml/anomaly_detectors"
-    |> cat_path(job_id)
+    |> Helpers.suffix_path(job_id)
     |> Client.get(opts)
     |> Helpers.parse_result()
   end
@@ -686,7 +686,7 @@ defmodule Dowser.Elasticsearch.Cat do
     {datafeed_id, opts} = Keyword.pop(opts, :datafeed_id)
 
     "/_cat/ml/datafeeds"
-    |> cat_path(datafeed_id)
+    |> Helpers.suffix_path(datafeed_id)
     |> Client.get(opts)
     |> Helpers.parse_result()
   end
@@ -713,7 +713,7 @@ defmodule Dowser.Elasticsearch.Cat do
     {id, opts} = Keyword.pop(opts, :id)
 
     "/_cat/ml/data_frame/analytics"
-    |> cat_path(id)
+    |> Helpers.suffix_path(id)
     |> Client.get(opts)
     |> Helpers.parse_result()
   end
@@ -740,7 +740,7 @@ defmodule Dowser.Elasticsearch.Cat do
     {model_id, opts} = Keyword.pop(opts, :model_id)
 
     "/_cat/ml/trained_models"
-    |> cat_path(model_id)
+    |> Helpers.suffix_path(model_id)
     |> Client.get(opts)
     |> Helpers.parse_result()
   end
@@ -772,19 +772,5 @@ defmodule Dowser.Elasticsearch.Cat do
 
   defp parse_help(result) do
     result
-  end
-
-  # The cat endpoints take their target as a trailing path segment, where the
-  # rest of the library takes it as a leading one — so `Helpers.path/2` doesn't
-  # fit.
-  @spec cat_path(String.t(), name()) :: String.t()
-  defp cat_path(base, target) do
-    case Index.segment(target) do
-      nil ->
-        base
-
-      segment ->
-        base <> "/" <> segment
-    end
   end
 end
