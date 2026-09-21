@@ -20,6 +20,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   #=> "8.13.4"
   ```
 
+- `Dowser.Elasticsearch.Cat` — every endpoint tagged `cat` in the
+  Elasticsearch specification: `help/1`, `indices/1`, `count/1`, `aliases/1`,
+  `shards/1`, `segments/1`, `recovery/1`, `fielddata/1`, `health/1`,
+  `nodes/1`, `nodeattrs/1`, `master/1`, `allocation/1`, `circuit_breaker/1`,
+  `thread_pool/1`, `pending_tasks/1`, `tasks/1`, `plugins/1`, `templates/1`,
+  `component_templates/1`, `repositories/1`, `snapshots/1`, `transforms/1`,
+  `ml_jobs/1`, `ml_datafeeds/1`, `ml_data_frame_analytics/1` and
+  `ml_trained_models/1`. None of them takes a required attribute, so each
+  one's optional path parameter is an option (`:index`, `:name`, `:node_id`,
+  …) and the signatures are `opts`-only.
+
+  The cat APIs answer in aligned text at a terminal, but they honour the
+  `accept` header `Dowser.Client` already sends: the response comes back as
+  JSON and is decoded like any other endpoint — a list of string-keyed,
+  string-valued maps, one per row.
+
+  ```elixir
+  Dowser.Elasticsearch.Cat.indices!(index: "posts*", params: [s: "docs.count:desc"])
+  #=> [%{"index" => "posts", "health" => "green", "docs.count" => "42", ...}]
+  ```
+
+  `help/1` is the exception: `GET /_cat` answers in plain text whatever the
+  header asks for — a banner line, then one endpoint per line — so its
+  response format defaults to `:raw` and the body is parsed into the list of
+  endpoints.
+
+  ```elixir
+  Dowser.Elasticsearch.Cat.help!()
+  #=> ["/_cat/allocation", "/_cat/shards", "/_cat/shards/{index}", ...]
+  ```
+
+  For the text a human reads, ask for it explicitly — the `format` query
+  parameter wins over the header, and `resp_format: :raw` keeps the body from
+  being parsed as JSON:
+
+  ```elixir
+  Dowser.Elasticsearch.Cat.indices!(params: [format: "text", v: true], resp_format: :raw)
+  ```
+
 ## [0.2.2] - 2026-09-20
 
 ### Fixed
