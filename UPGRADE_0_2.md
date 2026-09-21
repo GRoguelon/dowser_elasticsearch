@@ -1,6 +1,6 @@
-# Upgrading from 0.1.1 to 0.2.0
+# Upgrading from 0.1.1 to 0.2.1
 
-0.2.0 follows `dowser_client` 0.2.0, which drops every optional dependency and
+0.2.1 follows `dowser_client` 0.2, which drops every optional dependency and
 every pluggable adapter. Read
 [its guide](https://hexdocs.pm/dowser_client/UPGRADE_GUIDE_0_2.html) for the
 transport-level changes — dependencies, `configs:` → `contexts:`, `:http_opts`,
@@ -13,7 +13,7 @@ cannot help you with.
 
 ## At a glance
 
-| 0.1.1 | 0.2.0 |
+| 0.1.1 | 0.2.1 |
 | --- | --- |
 | `codec_adapter: Dowser.Elasticsearch.Codec` | `decoder:` **and** `encoder:`, both `Dowser.Elasticsearch.Codec` |
 | `Dowser.Elasticsearch.Fields.Date` | `Dowser.Elasticsearch.Codec.Date` |
@@ -40,7 +40,7 @@ Elixir's `JSON`.
 -     {:dowser_elasticsearch, "~> 0.1.0"},
 -     {:req, "~> 0.7"},
 -     {:jason, "~> 1.4"}
-+     {:dowser_elasticsearch, "~> 0.2.0"}
++     {:dowser_elasticsearch, "~> 0.2.1"}
     ]
   end
 ```
@@ -220,7 +220,7 @@ left on a **context** is dropped without a word — and the result is not an
 error but *no casting at all*:
 
 ```elixir
-# silently does nothing in 0.2.0
+# silently does nothing in 0.2
 contexts: [default: [endpoint: "...", codec_adapter: Dowser.Elasticsearch.Codec]]
 ```
 

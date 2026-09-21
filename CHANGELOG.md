@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] - 2026-09-20
+
+Re-release of 0.2.0, which never reached Hex. Nothing in the library itself
+changed: the 0.2.0 entry below describes everything in this release, and
+[UPGRADE_0_2.md](UPGRADE_0_2.md) is still the path from 0.1.1. Upgrade straight
+from 0.1.1 to 0.2.1.
+
+### Changed
+
+- Requires `dowser_client ~> 0.2.1`, a maintenance release that drops a stale
+  `poison` entry from its `mix.lock`. No API or behavior change on either side.
+
 ## [0.2.0] - 2026-09-20
 
 Tracks [`dowser_client` 0.2.0](https://hexdocs.pm/dowser_client/UPGRADE_GUIDE_0_2.html),

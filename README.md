@@ -34,7 +34,7 @@ Add `dowser_elasticsearch` to your list of dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:dowser_elasticsearch, "~> 0.2.0"}
+    {:dowser_elasticsearch, "~> 0.2.1"}
   ]
 end
 ```
@@ -43,8 +43,8 @@ Documentation can be generated with [ExDoc](https://github.com/elixir-lang/ex_do
 and published on [HexDocs](https://hexdocs.pm). Once published, the docs can
 be found at <https://hexdocs.pm/dowser_elasticsearch>.
 
-**Upgrading from 0.1.x?** 0.2.0 rewires how the casting is configured and
-follows `dowser_client` 0.2.0 in dropping its optional dependencies. The
+**Upgrading from 0.1.x?** 0.2.1 rewires how the casting is configured and
+follows `dowser_client` 0.2 in dropping its optional dependencies. The
 casting functions themselves are unchanged — see
 [UPGRADE_0_2.md](UPGRADE_0_2.md) for the migration path, and
 [CHANGELOG.md](CHANGELOG.md) for everything that changed.
