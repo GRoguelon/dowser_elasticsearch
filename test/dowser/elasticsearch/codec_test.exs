@@ -383,6 +383,113 @@ defmodule Dowser.Elasticsearch.CodecTest do
       assert hit == %{_id: "a1", _source: %{record_id: "r1"}}
     end
 
+    @nested_mapping %{
+      "properties" => %{
+        "published_at" => %{"type" => "date", "format" => "strict_date_optional_time"},
+        "alerts" => %{
+          "type" => "nested",
+          "properties" => %{
+            "record_id" => %{"type" => "keyword"},
+            "dates" => %{"type" => "date_range", "format" => "strict_date"},
+            "votes" => %{
+              "type" => "nested",
+              "properties" => %{"cast_at" => %{"type" => "date", "format" => "strict_date"}}
+            }
+          }
+        }
+      }
+    }
+
+    test "an inner hit's source is cast against the mapping of its nested path" do
+      HTTPStub.start_mapping_cacher!(@nested_mapping)
+
+      body = %{
+        "_index" => "posts",
+        "_source" => %{"published_at" => "2026-08-11T00:00:00.000Z"},
+        "inner_hits" => %{
+          "alerts" => %{
+            "hits" => %{
+              "total" => %{"value" => 1, "relation" => "eq"},
+              "max_score" => 6.1,
+              "hits" => [
+                %{
+                  "_index" => "posts",
+                  "_id" => "a1",
+                  "_nested" => %{"field" => "alerts", "offset" => 0},
+                  "_source" => %{
+                    "record_id" => "r1",
+                    "dates" => [%{"gte" => "2026-08-24", "lte" => "2026-08-24"}]
+                  }
+                }
+              ]
+            }
+          }
+        }
+      }
+
+      assert %{inner_hits: %{alerts: %{hits: %{max_score: 6.1, hits: [hit]}}}} =
+               Codec.decode(body, decode_opts(key_fn: &String.to_atom/1))
+
+      assert hit._source.dates == [Date.range(~D[2026-08-24], ~D[2026-08-24])]
+      assert hit._nested == %{field: "alerts", offset: 0}
+    end
+
+    test "a doubly nested inner hit follows the whole _nested chain" do
+      HTTPStub.start_mapping_cacher!(@nested_mapping)
+
+      body = %{
+        "_index" => "posts",
+        "_source" => %{},
+        "inner_hits" => %{
+          "alerts.votes" => %{
+            "hits" => %{
+              "hits" => [
+                %{
+                  "_nested" => %{
+                    "field" => "alerts",
+                    "offset" => 0,
+                    "_nested" => %{"field" => "votes", "offset" => 1}
+                  },
+                  "_source" => %{"cast_at" => "2026-08-24"}
+                }
+              ]
+            }
+          }
+        }
+      }
+
+      assert %{inner_hits: %{"alerts.votes": %{hits: %{hits: [hit]}}}} =
+               Codec.decode(body, decode_opts(key_fn: &String.to_atom/1))
+
+      assert hit._source.cast_at == ~D[2026-08-24]
+    end
+
+    test "an inner hit on a path the mapping doesn't know passes through uncast" do
+      HTTPStub.start_mapping_cacher!(@nested_mapping)
+
+      body = %{
+        "_index" => "posts",
+        "_source" => %{},
+        "inner_hits" => %{
+          "gone" => %{
+            "hits" => %{
+              "hits" => [
+                %{
+                  "_nested" => %{"field" => "gone", "offset" => 0},
+                  "_source" => %{"dates" => [%{"gte" => "2026-08-24", "lte" => "2026-08-24"}]}
+                }
+              ]
+            }
+          }
+        }
+      }
+
+      assert %{inner_hits: %{gone: %{hits: %{hits: [hit]}}}} =
+               Codec.decode(body, decode_opts(key_fn: &String.to_atom/1))
+
+      assert hit._source.dates == [%{gte: "2026-08-24", lte: "2026-08-24"}]
+    end
+
     test "a hit's other envelope fields are keyed the same way" do
       HTTPStub.start_mapping_cacher!(@mapping)
 

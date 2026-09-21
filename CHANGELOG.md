@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.2] - 2026-09-20
+
+### Fixed
+
+- **A hit's `inner_hits` were never cast.** 0.2.0 taught the decoder to key
+  them like the rest of the response, but their values still came back exactly
+  as JSON produced them, on the grounds that an inner hit carries no `_index`
+  to resolve a mapping from. It doesn't need one: it is a document of the same
+  index as the hit that holds it, and `_nested.field` names the path into that
+  mapping. A `date_range` under a `nested` field came back as a
+  `%{gte: _, lte: _}` map where a `Date.Range` was expected, and every other
+  mapped type was left uncast the same way.
+
+  An inner hit's `_source` is now cast against the mapping entry its
+  `_nested` chain points at — the whole chain, so a doubly nested inner hit
+  resolves too. An inner hit with no `_nested` (a `has_child` or `has_parent`
+  join) is a document of the index itself and is cast against the index
+  mapping. A path the mapping doesn't know degrades to no cast rather than
+  raising, as everywhere else in the codec.
+
+  The rest of a hit's envelope — `fields`, `highlight`, `sort` — has no
+  mapping entry to be cast against and is unchanged: keys keyed, values as
+  they arrived.
+
 ## [0.2.1] - 2026-09-20
 
 Re-release of 0.2.0, which never reached Hex. Nothing in the library itself

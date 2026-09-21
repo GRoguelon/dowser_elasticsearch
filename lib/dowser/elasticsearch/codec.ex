@@ -34,6 +34,13 @@ defmodule Dowser.Elasticsearch.Codec do
   (`Dowser.Elasticsearch.Search.msearch/2`), and so on — each hit's own
   `_index` selects its mapping, so mixed-index results are cast correctly.
 
+  A hit's `inner_hits` are cast too. They carry no `_index` of their own, so
+  their mapping comes from the hit they belong to: `_nested.field` names the
+  path into it, and an inner hit with no `_nested` (a `has_child` or
+  `has_parent` join) is cast against the index mapping itself. The rest of a
+  hit's envelope — `fields`, `highlight`, `sort` — has no mapping entry to be
+  cast against, and only has its keys run through `opts[:key_fn]`.
+
   If no mapping can be found for a document's index (no
   `Dowser.Elasticsearch.MappingCacher` running, or the fetch fails), its values
   pass through unchanged; keys are still cast per `opts[:key_fn]`.

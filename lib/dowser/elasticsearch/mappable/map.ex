@@ -70,13 +70,19 @@ defimpl Dowser.Elasticsearch.Mappable, for: Map do
       {"_source" = key, value} ->
         {key_fn.(key), @protocol.decode(value, mapping, key_fn, value_fn)}
 
-      # The rest of a hit is envelope, not document: `inner_hits`, `fields`,
-      # `highlight` and friends. There is no mapping entry to cast them
-      # against — an inner hit is a nested document, and carries no `_index`
-      # of its own — but their keys are part of the same response, so they
-      # follow the same `:keys`. Renaming only the outer key would leave a
-      # caller reading `hit.inner_hits` a string-keyed map inside an
-      # otherwise atom-keyed one.
+      # `inner_hits` holds documents rather than envelope: each named entry is
+      # a hits envelope of its own, over documents of the same index. They
+      # carry no `_index` to resolve a mapping from — `_nested.field` names
+      # the path into this hit's mapping instead — so they are cast against
+      # that rather than left as they arrived.
+      {"inner_hits" = key, value} ->
+        {key_fn.(key), decode_inner_hits(value, mapping, key_fn, value_fn)}
+
+      # The rest of a hit is envelope, not document: `fields`, `highlight` and
+      # friends. There is no mapping entry to cast them against, but their
+      # keys are part of the same response, so they follow the same `:keys`.
+      # Renaming only the outer key would leave a caller reading `hit.fields`
+      # a string-keyed map inside an otherwise atom-keyed one.
       {key, value} ->
         {key_fn.(key), Keyable.transform_keys(value, key_fn)}
     end)
@@ -102,6 +108,101 @@ defimpl Dowser.Elasticsearch.Mappable, for: Map do
     Map.new(value, fn {key, value} ->
       {key_fn.(key), @protocol.decode(value, nil, key_fn, value_fn)}
     end)
+  end
+
+  ## Private functions — inner hits
+
+  # `%{name => hits envelope}`. The names come from the query that asked for
+  # them, so they are keyed like the rest of the response.
+  defp decode_inner_hits(value, mapping, key_fn, value_fn) when is_map(value) do
+    Map.new(value, fn {name, result} ->
+      {key_fn.(name), decode_inner_result(result, mapping, key_fn, value_fn)}
+    end)
+  end
+
+  defp decode_inner_hits(value, _mapping, key_fn, _value_fn) do
+    Keyable.transform_keys(value, key_fn)
+  end
+
+  defp decode_inner_result(
+         %{"hits" => %{"hits" => hits} = envelope} = result,
+         mapping,
+         key_fn,
+         value_fn
+       )
+       when is_list(hits) do
+    hits = Enum.map(hits, &decode_inner_hit(&1, mapping, key_fn, value_fn))
+    envelope = envelope |> Map.delete("hits") |> Keyable.transform_keys(key_fn)
+
+    result
+    |> Map.delete("hits")
+    |> Keyable.transform_keys(key_fn)
+    |> Map.put(key_fn.("hits"), Map.put(envelope, key_fn.("hits"), hits))
+  end
+
+  defp decode_inner_result(result, _mapping, key_fn, _value_fn) do
+    Keyable.transform_keys(result, key_fn)
+  end
+
+  defp decode_inner_hit(%{"_source" => %{}} = hit, mapping, key_fn, value_fn) do
+    inner_mapping = nested_mapping(mapping, Map.get(hit, "_nested"))
+
+    Map.new(hit, fn
+      {"_source" = key, value} ->
+        {key_fn.(key), @protocol.decode(value, inner_mapping, key_fn, value_fn)}
+
+      # A `_nested` chain is written from the root of the document, so a
+      # deeper level of inner hits resolves against the same mapping.
+      {"inner_hits" = key, value} ->
+        {key_fn.(key), decode_inner_hits(value, mapping, key_fn, value_fn)}
+
+      {key, value} ->
+        {key_fn.(key), Keyable.transform_keys(value, key_fn)}
+    end)
+  end
+
+  defp decode_inner_hit(hit, _mapping, key_fn, _value_fn) do
+    Keyable.transform_keys(hit, key_fn)
+  end
+
+  # Walks a `_nested` chain — `%{"field" => path, "_nested" => %{...}}`, each
+  # link a path relative to the one above — down to the mapping entry of the
+  # nested document the inner hit came from. An inner hit with no `_nested`
+  # (a `has_child`/`has_parent` join) is a document of the index itself, and
+  # keeps the mapping it was given. A path the mapping doesn't know degrades
+  # to no mapping, and so to no cast.
+  defp nested_mapping(mapping, %{"field" => <<_::binary>> = field} = nested) do
+    case field_mapping(mapping, field) do
+      nil ->
+        nil
+
+      inner_mapping ->
+        nested_mapping(inner_mapping, Map.get(nested, "_nested"))
+    end
+  end
+
+  defp nested_mapping(mapping, _nested) do
+    mapping
+  end
+
+  defp field_mapping(mapping, path) do
+    path
+    |> String.split(".")
+    |> Enum.reduce_while(mapping, &field_step/2)
+  end
+
+  defp field_step(segment, %{"properties" => properties}) do
+    case Map.fetch(properties, segment) do
+      {:ok, field} ->
+        {:cont, field}
+
+      :error ->
+        {:halt, nil}
+    end
+  end
+
+  defp field_step(_segment, _mapping) do
+    {:halt, nil}
   end
 
   ## Private functions
