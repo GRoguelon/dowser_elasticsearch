@@ -35,6 +35,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `Dowser.Elasticsearch.XPack` — every endpoint tagged `xpack` in the
+  Elasticsearch specification: `info/1` (`GET /_xpack`) reports the build,
+  the license and which features the cluster ships, and `usage/1`
+  (`GET /_xpack/usage`) how much each of those features is actually used.
+
+  ```elixir
+  Dowser.Elasticsearch.XPack.info!(params: [categories: "license"])
+  #=> %{"license" => %{"type" => "basic", "status" => "active", ...}}
+
+  Dowser.Elasticsearch.XPack.usage!()["watcher"]["count"]
+  #=> %{"active" => 2, "total" => 3}
+  ```
+
 - `Dowser.Elasticsearch.Reindex` — every endpoint tagged `reindex` in the
   Elasticsearch specification, which is the reindex *task* family, not the
   reindex itself: `list/1` (`GET /_reindex`) lists the tasks running, `get/2`

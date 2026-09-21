@@ -112,6 +112,44 @@ Index.refresh(index: "posts")
 Index.delete_index("posts")
 ```
 
+### Cluster
+
+```elixir
+alias Dowser.Elasticsearch.Cluster
+
+Cluster.ping?()
+# true
+Cluster.health!(params: [wait_for_status: "yellow"])
+# %{"status" => "yellow", "number_of_nodes" => 1, ...}
+Cluster.nodes_stats!(metric: "indices", index_metric: "docs")
+```
+
+### Cat
+
+```elixir
+alias Dowser.Elasticsearch.Cat
+
+Cat.indices!(index: "posts*", params: [s: "docs.count:desc"])
+# [%{"index" => "posts", "health" => "green", "docs.count" => "42", ...}]
+```
+
+The cat APIs answer in JSON here, one map per row, rather than the aligned
+text a terminal shows — pass `params: [format: "text", v: true],
+resp_format: :raw` for that.
+
+### Health report, info and usage
+
+```elixir
+alias Dowser.Elasticsearch.HealthReport
+alias Dowser.Elasticsearch.Info
+alias Dowser.Elasticsearch.XPack
+
+Info.info!()["version"]["number"]
+# "9.0.0"
+HealthReport.health_report!(feature: "disk")["indicators"]
+XPack.usage!()["watcher"]["count"]
+```
+
 ## Streaming
 
 A search returns one page. `Dowser.Elasticsearch.Streamer` walks all of them,
@@ -317,55 +355,56 @@ should work, since the wrapped endpoints are stable across releases.
 
 ### Endpoint coverage
 
-Elasticsearch groups its API into tags; only `Search`, `Document`, and
-`Index` are currently implemented.
+Elasticsearch groups its API into tags, and each supported tag maps to one
+module under `Dowser.Elasticsearch`. Every endpoint of a supported tag is
+implemented, each as a pair of functions (`search/2` and `search!/2`).
 
-| Endpoint tag                              | Supported |
-| ------------------------------------------ | :-------: |
-| Behavioral analytics                       | ❌        |
-| Compact and aligned text (CAT)             | ❌        |
-| Cluster                                    | ❌        |
-| Cluster - Health                           | ❌        |
-| Connector                                  | ❌        |
-| Cross-cluster replication                  | ❌        |
-| Data stream                                | ❌        |
-| Document                                   | ✅        |
-| Enrich                                     | ❌        |
-| EQL                                        | ❌        |
-| ES\|QL                                     | ❌        |
-| Features                                   | ❌        |
-| Fleet                                      | ❌        |
-| Graph explore                              | ❌        |
-| Index                                      | ✅        |
-| Index lifecycle management                 | ❌        |
-| Inference                                  | ❌        |
-| Info                                       | ❌        |
-| Ingest                                     | ❌        |
-| Licensing                                  | ❌        |
-| Logstash                                   | ❌        |
-| Machine learning                           | ❌        |
-| Machine learning anomaly detection         | ❌        |
-| Machine learning data frame analytics      | ❌        |
-| Machine learning trained model             | ❌        |
-| Migration                                  | ❌        |
-| Query rules                                | ❌        |
-| Reindex                                    | ❌        |
-| Rollup                                     | ❌        |
-| Script                                     | ❌        |
-| Search                                     | ✅        |
-| Search application                         | ❌        |
-| Searchable snapshots                       | ❌        |
-| Security                                   | ❌        |
-| Snapshot and restore                       | ❌        |
-| Snapshot lifecycle management              | ❌        |
-| SQL                                        | ❌        |
-| Streams                                    | ❌        |
-| Synonyms                                   | ❌        |
-| Task management                            | ❌        |
-| Text structure                             | ❌        |
-| Transform                                  | ❌        |
-| Usage                                      | ❌        |
-| Watcher                                    | ❌        |
+| Endpoint tag                          | Supported | Module         |
+| ------------------------------------- | :-------: | -------------- |
+| Behavioral analytics                  | ❌         |                |
+| Compact and aligned text (CAT)        | ✅         | `Cat`          |
+| Cluster                               | ✅         | `Cluster`      |
+| Cluster - Health                      | ✅         | `HealthReport` |
+| Connector                             | ❌         |                |
+| Cross-cluster replication             | ❌         |                |
+| Data stream                           | ❌         |                |
+| Document                              | ✅         | `Document`     |
+| Enrich                                | ❌         |                |
+| EQL                                   | ❌         |                |
+| ES\|QL                                | ❌         |                |
+| Features                              | ❌         |                |
+| Fleet                                 | ❌         |                |
+| Graph explore                         | ❌         |                |
+| Index                                 | ✅         | `Index`        |
+| Index lifecycle management            | ❌         |                |
+| Inference                             | ❌         |                |
+| Info                                  | ✅         | `Info`         |
+| Ingest                                | ❌         |                |
+| Licensing                             | ❌         |                |
+| Logstash                              | ❌         |                |
+| Machine learning                      | ❌         |                |
+| Machine learning anomaly detection    | ❌         |                |
+| Machine learning data frame analytics | ❌         |                |
+| Machine learning trained model        | ❌         |                |
+| Migration                             | ❌         |                |
+| Query rules                           | ❌         |                |
+| Reindex                               | ✅         | `Reindex`      |
+| Rollup                                | ❌         |                |
+| Script                                | ❌         |                |
+| Search                                | ✅         | `Search`       |
+| Search application                    | ❌         |                |
+| Searchable snapshots                  | ❌         |                |
+| Security                              | ❌         |                |
+| Snapshot and restore                  | ❌         |                |
+| Snapshot lifecycle management         | ❌         |                |
+| SQL                                   | ❌         |                |
+| Streams                               | ❌         |                |
+| Synonyms                              | ❌         |                |
+| Task management                       | ❌         |                |
+| Text structure                        | ❌         |                |
+| Transform                             | ❌         |                |
+| Usage                                 | ✅         | `XPack`        |
+| Watcher                               | ❌         |                |
 
 ## Trademark Notice
 
