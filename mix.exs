@@ -79,13 +79,10 @@ defmodule DowserElasticsearch.MixProject do
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
-      # {:dowser_client, "~> 0.2.0"},
-      # DO NOT COMMIT use previous line
-      {:dowser_client, github: "GRoguelon/dowser_client", branch: "feat/httpc"},
+      {:dowser_client, "~> 0.2.1"},
 
       ## Dev
-      {:ex_doc, "~> 0.34", only: :dev, runtime: false, warn_if_outdated: true},
-      {:benchee, "~> 1.0", only: :dev}
+      {:ex_doc, "~> 0.34", only: :dev, runtime: false, warn_if_outdated: true}
     ]
   end
 end
