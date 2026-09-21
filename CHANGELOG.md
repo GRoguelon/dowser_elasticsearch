@@ -20,6 +20,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   #=> "8.13.4"
   ```
 
+- `Dowser.Elasticsearch.HealthReport` — the endpoint tagged `health_report`
+  in the Elasticsearch specification. `health_report/1` (`GET /_health_report`)
+  returns the cluster's health report: one indicator per subsystem
+  (`master_is_stable`, `shards_availability`, `disk`, …), each with its
+  `green`/`unknown`/`yellow`/`red` status, the explanation behind it, the
+  impacts of a non-green one and, where Elasticsearch can tell, the diagnosis
+  and the steps to fix it. The `:feature` option restricts the report to one
+  indicator — Elasticsearch resolves that path segment as a single name and
+  answers a comma-joined list with a `404`, so a list of several is refused
+  as `{:error, %ArgumentError{}}` (raised by `health_report!/1`) instead.
+
+  ```elixir
+  {:ok, report} = Dowser.Elasticsearch.HealthReport.health_report()
+  report["status"]
+  #=> "green"
+  ```
+
 - `Dowser.Elasticsearch.Cat` — every endpoint tagged `cat` in the
   Elasticsearch specification: `help/1`, `indices/1`, `count/1`, `aliases/1`,
   `shards/1`, `segments/1`, `recovery/1`, `fielddata/1`, `health/1`,
