@@ -5,6 +5,38 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.1] - 2026-09-24
+
+### Fixed
+
+- **An object shaped like a range is no longer decoded as one.** `decode/2`
+  recognised a range by its `%{"gte" => _, "lte" => _}` shape alone, so an
+  object mapped as two `date` fields named `gte` and `lte` — what a document
+  written before the field was mapped as a `date_range` leaves behind — was
+  handed to the field codec, which returned it untouched for want of a range
+  `"type"`. Since that path never calls `key_fn`, it came back string-keyed
+  inside an otherwise atom-keyed document, and a caller reading `period.gte`
+  under `keys: :atoms` got `nil`.
+
+  Such an object is now walked like any other: its keys go through `key_fn`
+  and each bound is cast against its own mapping entry.
+
+  ```elixir
+  # mapping: %{"period" => %{"properties" => %{
+  #   "gte" => %{"type" => "date"}, "lte" => %{"type" => "date"}}}}
+
+  # before
+  %{period: %{"gte" => "2026-08-01", "lte" => "2026-08-11"}}
+
+  # after
+  %{period: %{gte: ~D[2026-08-01], lte: ~D[2026-08-11]}}
+  ```
+
+  A genuine `date_range` field is unaffected and still decodes to a
+  `Date.Range`, whether it is held directly or inside an array. Code that
+  reached into such an object with string keys has to switch to whatever
+  `:keys` says, and now gets cast bounds rather than raw strings.
+
 ## [0.3.0] - 2026-09-21
 
 ### Changed

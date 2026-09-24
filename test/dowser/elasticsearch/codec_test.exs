@@ -549,6 +549,69 @@ defmodule Dowser.Elasticsearch.CodecTest do
     end
   end
 
+  describe "decode/2 — an object shaped like a range" do
+    # `period` and `window` hold the same `%{"gte" => _, "lte" => _}` shape as
+    # `run`, but are mapped as two `date` fields rather than as a `date_range`
+    # — which is what a document written before the field was mapped as a range
+    # leaves behind. `window` spells the object out with `"type" => "object"`,
+    # `period` leaves it implicit, as Elasticsearch does for a dynamic mapping.
+    @object_range_mapping %{
+      "properties" => %{
+        "run" => %{"type" => "date_range", "format" => "strict_date"},
+        "period" => %{
+          "dynamic" => "strict",
+          "properties" => %{
+            "gte" => %{"type" => "date", "format" => "strict_date"},
+            "lte" => %{"type" => "date", "format" => "strict_date"}
+          }
+        },
+        "window" => %{
+          "type" => "object",
+          "properties" => %{
+            "gte" => %{"type" => "date", "format" => "strict_date"},
+            "lte" => %{"type" => "date", "format" => "strict_date"}
+          }
+        }
+      }
+    }
+
+    test "its keys go through key_fn and its bounds are cast, rather than passing through" do
+      HTTPStub.start_mapping_cacher!(@object_range_mapping)
+
+      body = %{
+        "_index" => "posts",
+        "_source" => %{
+          "period" => %{"gte" => "2026-08-01", "lte" => "2026-08-11"},
+          "window" => %{"gte" => "2026-09-01", "lte" => "9999-12-31"}
+        }
+      }
+
+      assert %{_source: %{period: period, window: window}} =
+               Codec.decode(body, decode_opts(key_fn: &String.to_atom/1))
+
+      assert period == %{gte: ~D[2026-08-01], lte: ~D[2026-08-11]}
+      assert window == %{gte: ~D[2026-09-01], lte: ~D[9999-12-31]}
+    end
+
+    test "a real date_range alongside it is still cast to a Date.Range" do
+      HTTPStub.start_mapping_cacher!(@object_range_mapping)
+
+      body = %{
+        "_index" => "posts",
+        "_source" => %{
+          "run" => %{"gte" => "2026-08-01", "lte" => "2026-08-11"},
+          "period" => %{"gte" => "2026-08-01", "lte" => "2026-08-11"}
+        }
+      }
+
+      assert %{_source: %{run: run, period: period}} =
+               Codec.decode(body, decode_opts(key_fn: &String.to_atom/1))
+
+      assert run == Date.range(~D[2026-08-01], ~D[2026-08-11])
+      assert period == %{gte: ~D[2026-08-01], lte: ~D[2026-08-11]}
+    end
+  end
+
   describe "decode/2 — a subtree the mapping declares opaque" do
     @opaque_mapping %{
       "properties" => %{

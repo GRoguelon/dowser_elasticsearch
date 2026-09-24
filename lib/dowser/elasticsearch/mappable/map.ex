@@ -41,15 +41,23 @@ defimpl Dowser.Elasticsearch.Mappable, for: Map do
     value
   end
 
-  # A range object whose own mapping entry is in hand. The `"properties"`
-  # clause below catches a range that is a direct child of an object, but
-  # Elasticsearch lets any field hold an array, and a range reached through
-  # one arrives here with the field's entry as its mapping rather than the
-  # parent's. Without this it would fall through to the generic clause, which
-  # casts the keys and never calls `value_fn` — leaving `%{gte: _, lte: _}`
-  # where a `Date.Range` was expected.
+  # A range object whose own mapping entry is in hand — whether it is a direct
+  # child of an object or was reached through an array, since Elasticsearch
+  # lets any field hold one and each element arrives here with the field's
+  # entry as its mapping rather than the parent's. Without this it would fall
+  # through to the generic clause, which casts the keys and never calls
+  # `value_fn` — leaving `%{gte: _, lte: _}` where a `Date.Range` was expected.
+  #
+  # `"properties"` is what tells a range apart from an object that merely looks
+  # like one: a `date_range` field has no sub-fields, while a `period` mapped as
+  # two `date` fields named `gte` and `lte` has the very same shape and no range
+  # codec behind it. Matching that one here would hand it to `value_fn`, which
+  # returns it untouched for want of a range `"type"` — and since this clause
+  # never calls `key_fn`, it would come back string-keyed inside an otherwise
+  # atom-keyed document. It belongs to the `"properties"` clause below, which
+  # casts each bound against its own entry.
   def decode(%{"gte" => _, "lte" => _} = value, %{"type" => _} = mapping, _key_fn, value_fn)
-      when map_size(value) == 2 do
+      when map_size(value) == 2 and not is_map_key(mapping, "properties") do
     value_fn.(value, mapping)
   end
 
@@ -95,12 +103,8 @@ defimpl Dowser.Elasticsearch.Mappable, for: Map do
   end
 
   def decode(value, %{"properties" => mapping}, key_fn, value_fn) do
-    Map.new(value, fn
-      {key, %{"gte" => _, "lte" => _} = value} when map_size(value) == 2 ->
-        {key_fn.(key), value_fn.(value, mapping[key])}
-
-      {key, value} ->
-        {key_fn.(key), @protocol.decode(value, mapping[key], key_fn, value_fn)}
+    Map.new(value, fn {key, value} ->
+      {key_fn.(key), @protocol.decode(value, mapping[key], key_fn, value_fn)}
     end)
   end
 
