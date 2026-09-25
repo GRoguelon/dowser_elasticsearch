@@ -1,6 +1,7 @@
 defmodule Dowser.Elasticsearch.DocumentTest do
   use ExUnit.Case, async: false
 
+  alias Dowser.Elasticsearch.BulkError
   alias Dowser.Elasticsearch.Document
   alias Dowser.Elasticsearch.HTTPStub
 
@@ -375,6 +376,101 @@ defmodule Dowser.Elasticsearch.DocumentTest do
 
       assert {:ok, _} = Document.bulk([%{}, %{}], index: "posts", context: context(port))
       assert Task.await(server).path == "/posts/_bulk"
+    end
+
+    test "bulk/2 returns a BulkError when an item failed" do
+      body =
+        ~s({"took":5,"errors":true,"items":[) <>
+          ~s({"index":{"_index":"posts","_id":"1","status":201}},) <>
+          ~s({"index":{"_index":"posts","_id":"2","status":429,"error":) <>
+          ~s({"type":"es_rejected_execution_exception","reason":"rejected"}}},) <>
+          ~s({"index":{"_index":"posts","_id":"3","status":400,"error":) <>
+          ~s({"type":"mapper_parsing_exception","reason":"failed to parse"}}}]})
+
+      {port, _server} = start_server(json_response(body))
+
+      operations = [
+        %{"index" => %{"_id" => "1"}},
+        %{"title" => "one"},
+        %{"index" => %{"_id" => "2"}},
+        %{"title" => "two"},
+        %{"index" => %{"_id" => "3"}},
+        %{"title" => "three"}
+      ]
+
+      assert {:error, %BulkError{} = error} =
+               Document.bulk(operations, index: "posts", context: context(port))
+
+      assert error.succeeded == 1
+      assert error.took == 5
+      assert [rejected, malformed] = error.failed
+
+      assert %{
+               position: 1,
+               action: "index",
+               index: "posts",
+               id: "2",
+               status: 429,
+               operation: [%{"index" => %{"_id" => "2"}}, %{"title" => "two"}]
+             } = rejected
+
+      assert rejected.error.type == "es_rejected_execution_exception"
+      assert %{position: 2, status: 400} = malformed
+
+      # Only the rejected item is worth resubmitting — the malformed one would
+      # fail again, and the successful one would be written twice.
+      assert error.retryable == [%{"index" => %{"_id" => "2"}}, %{"title" => "two"}]
+
+      assert Exception.message(error) ==
+               "2 of 3 bulk items failed: 1 × es_rejected_execution_exception, " <>
+                 "1 × mapper_parsing_exception"
+    end
+
+    test "bulk/2 reads an atom-keyed response body" do
+      body =
+        ~s({"errors":true,"items":[{"delete":{"_index":"posts","_id":"1","status":503,) <>
+          ~s("error":{"type":"unavailable_shards_exception","reason":"primary unavailable"}}}]})
+
+      {port, _server} = start_server(json_response(body))
+      operations = [%{"delete" => %{"_id" => "1"}}]
+
+      assert {:error, %BulkError{} = error} =
+               Document.bulk(operations,
+                 index: "posts",
+                 context: context(port) ++ [keys: :atoms]
+               )
+
+      assert [%{action: "delete", status: 503, id: "1"}] = error.failed
+      assert error.retryable == [%{"delete" => %{"_id" => "1"}}]
+      assert error.succeeded == 0
+    end
+
+    test "bulk/2 returns {:ok, body} when every item succeeded" do
+      body = ~s({"took":3,"errors":false,"items":[{"index":{"_index":"posts","status":201}}]})
+      {port, _server} = start_server(json_response(body))
+
+      assert {:ok, %{"errors" => false}} =
+               Document.bulk([%{"index" => %{}}, %{"title" => "hi"}],
+                 index: "posts",
+                 context: context(port)
+               )
+    end
+
+    test "bulk!/2 raises the BulkError a partial failure returns" do
+      body =
+        ~s({"errors":true,"items":[{"create":{"_index":"posts","_id":"1","status":409,) <>
+          ~s("error":{"type":"version_conflict_engine_exception","reason":"already exists"}}}]})
+
+      {port, _server} = start_server(json_response(body))
+
+      assert_raise BulkError,
+                   "1 of 1 bulk items failed: 1 × version_conflict_engine_exception",
+                   fn ->
+                     Document.bulk!([%{"create" => %{"_id" => "1"}}, %{"title" => "hi"}],
+                       index: "posts",
+                       context: context(port)
+                     )
+                   end
     end
 
     test "mget/2 POSTs the body to /{index}/_mget" do

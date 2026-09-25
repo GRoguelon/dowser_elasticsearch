@@ -15,8 +15,10 @@ defmodule Dowser.Elasticsearch.Error do
   `"all shards failed"` — that nested reason is appended to `:reason`.
   """
 
+  alias Dowser.Elasticsearch.Body
+
   @type t :: %__MODULE__{
-          status: non_neg_integer(),
+          status: non_neg_integer() | nil,
           body: term(),
           type: String.t() | nil,
           reason: String.t() | nil
@@ -27,8 +29,11 @@ defmodule Dowser.Elasticsearch.Error do
   @doc """
   Builds an error from a response status and body, extracting `:type`/`:reason`
   from a standard Elasticsearch error body when present.
+
+  `status` may be `nil` for an error that is not a response of its own — one
+  bulk item's, which `Dowser.Elasticsearch.BulkError` reports per item.
   """
-  @spec new(non_neg_integer(), term()) :: t()
+  @spec new(non_neg_integer() | nil, term()) :: t()
   def new(status, body) do
     {type, reason} = extract(body)
     %__MODULE__{status: status, body: body, type: type, reason: reason}
@@ -36,16 +41,23 @@ defmodule Dowser.Elasticsearch.Error do
 
   @impl true
   def message(%__MODULE__{status: status, type: type, reason: reason}) do
+    prefix =
+      if status do
+        "Elasticsearch responded with HTTP #{status}"
+      else
+        "Elasticsearch reported an error"
+      end
+
     case Enum.reject([type && "[#{type}]", reason], &is_nil/1) do
       [] ->
-        "Elasticsearch responded with HTTP #{status}"
+        prefix
 
       detail ->
-        "Elasticsearch responded with HTTP #{status}: #{Enum.join(detail, " ")}"
+        "#{prefix}: #{Enum.join(detail, " ")}"
     end
   end
 
-  defp extract(%{} = body) when not is_struct(body) do
+  defp extract(body) do
     case value(body, "error") do
       %{} = error ->
         {value(error, "type"), reason(error)}
@@ -57,8 +69,6 @@ defmodule Dowser.Elasticsearch.Error do
         {nil, nil}
     end
   end
-
-  defp extract(_body), do: {nil, nil}
 
   defp reason(error) do
     case {value(error, "reason"), nested_reason(error)} do
@@ -96,20 +106,5 @@ defmodule Dowser.Elasticsearch.Error do
     end
   end
 
-  # Keys come out of the client as strings or atoms, depending on its `:keys`
-  # option, so they are matched by name rather than by shape.
-  defp value(map, name) when is_map(map) do
-    case Enum.find(map, fn {key, _value} -> named?(key, name) end) do
-      {_key, value} ->
-        value
-
-      nil ->
-        nil
-    end
-  end
-
-  defp value(_map, _name), do: nil
-
-  defp named?(key, name) when is_binary(key) or is_atom(key), do: to_string(key) == name
-  defp named?(_key, _name), do: false
+  defp value(map, name), do: Body.value(map, name)
 end

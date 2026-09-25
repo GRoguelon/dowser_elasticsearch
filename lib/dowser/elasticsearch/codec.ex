@@ -174,6 +174,7 @@ defmodule Dowser.Elasticsearch.Codec do
       Set by the API function itself.
   """
 
+  alias Dowser.Elasticsearch.Bulk
   alias Dowser.Elasticsearch.Mappable
   alias Dowser.Elasticsearch.MappingCacher
 
@@ -200,8 +201,6 @@ defmodule Dowser.Elasticsearch.Codec do
     "integer_range" => Dowser.Elasticsearch.Codec.Range,
     "ip" => Dowser.Elasticsearch.Codec.IP
   }
-
-  @bulk_actions [:index, :create, :update, :delete]
 
   # Where an update action's source sits, in both key styles — a key that isn't
   # there is skipped rather than created.
@@ -352,17 +351,7 @@ defmodule Dowser.Elasticsearch.Codec do
     {fun.(item, Keyword.put(opts, :index, index)), :header}
   end
 
-  defp bulk_action(header) do
-    Enum.find_value(@bulk_actions, {:index, header}, fn action ->
-      case fetch_any(header, action) do
-        %{} = value ->
-          {action, value}
-
-        _other ->
-          nil
-      end
-    end)
-  end
+  defp bulk_action(header), do: Bulk.action(header)
 
   # A bulk payload may be written with atom or string keys, so both are tried.
   defp encode_key(%{} = term, key, fun, opts) do

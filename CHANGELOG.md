@@ -5,7 +5,38 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.3.2] - Unreleased
+## [0.4.0] - Unreleased
+
+### Changed
+
+- **`Document.bulk/2` no longer reports a partial failure as a success.**
+  Elasticsearch answers a bulk request `200 OK` with `"errors" => true` and one
+  `items` entry per action, so a request whose documents were half rejected — a
+  per-item `429` under load, a mapping failure — was indistinguishable from one
+  in which everything was indexed: `bulk/2` returned `{:ok, body}` and `bulk!/2`
+  raised nothing.
+
+  `{:ok, body}` now means every item was applied. As soon as one failed, the
+  result is `{:error, %Dowser.Elasticsearch.BulkError{}}`, which carries the
+  failed items (with the operation that caused each), how many succeeded, and
+  `:retryable` — the operations Elasticsearch *rejected* (`429`/`503`), ready to
+  hand straight back to `bulk/2`:
+
+  ```elixir
+  case Dowser.Elasticsearch.Document.bulk(operations, index: "posts") do
+    {:ok, _body} ->
+      :ok
+
+    {:error, %BulkError{retryable: [_ | _] = operations}} ->
+      Dowser.Elasticsearch.Document.bulk(operations, index: "posts")
+  end
+  ```
+
+  Only the rejected items are listed there: resubmitting the whole payload
+  would write the successful ones a second time. A caller that wants the raw
+  response body still has it, on the error's `:body`.
+
+  `bulk!/2` raises that error, so it now raises unless every item was applied.
 
 ### Fixed
 

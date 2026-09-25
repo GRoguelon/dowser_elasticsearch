@@ -42,6 +42,7 @@ defmodule Dowser.Elasticsearch.Document do
   variant that returns the body directly or raises the error exception.
   """
 
+  alias Dowser.Elasticsearch.Bulk
   alias Dowser.Elasticsearch.Client
   alias Dowser.Elasticsearch.Codec
   alias Dowser.Elasticsearch.Helpers
@@ -282,6 +283,24 @@ defmodule Dowser.Elasticsearch.Document do
   ## Options
 
     * `:index` — default index target for actions that name none.
+
+  ## Per-item failures
+
+  A bulk request is not all-or-nothing. Elasticsearch answers `200 OK` with
+  `"errors" => true` and an `items` entry per action, so a request whose
+  documents were half rejected — a per-item `429` under load, a mapping
+  failure — looks like a successful one at the HTTP level.
+
+  So `{:ok, body}` here means *every* item was applied. As soon as one failed,
+  the result is `{:error, %Dowser.Elasticsearch.BulkError{}}`, which reports
+  what failed, what succeeded, and which operations are worth resubmitting:
+
+      {:error, %BulkError{failed: failed, succeeded: 488, retryable: operations}} =
+        Dowser.Elasticsearch.Document.bulk(operations, index: "posts")
+
+  Only the rejected items (`429`/`503`) are listed in `:retryable`;
+  resubmitting those writes nothing twice, where resending the whole payload
+  would index the successful items a second time.
   """
   @spec bulk([map()], keyword()) :: result()
   def bulk(operations, opts \\ []) when is_list(operations) do
@@ -295,16 +314,17 @@ defmodule Dowser.Elasticsearch.Document do
       |> Client.put_codec()
       |> Helpers.put_default_format(:req_format, :ndjson)
 
-    operations = encode_bulk(operations, index, opts)
-
     index
     |> Helpers.path("/_bulk")
-    |> Client.post(operations, opts)
+    |> Client.post(encode_bulk(operations, index, opts), opts)
     |> Helpers.parse_result()
+    |> Bulk.check(operations)
   end
 
   @doc """
-  Like `bulk/2`, but returns the body directly or raises the error exception.
+  Like `bulk/2`, but returns the body directly or raises the error exception —
+  including the `Dowser.Elasticsearch.BulkError` a partial failure returns, so
+  it raises unless every item was applied.
   """
   @spec bulk!([map()], keyword()) :: body()
   def bulk!(operations, opts \\ []) do
