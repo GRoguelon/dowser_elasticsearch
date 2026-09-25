@@ -116,12 +116,10 @@ defmodule DowserElasticsearch.MixProject do
   # The two packages are developed together: `DOWSER_CLIENT_PATH=../dowser_client`
   # builds against a working copy instead of the published version.
   defp dowser_client do
-    case System.get_env("DOWSER_CLIENT_PATH") do
-      nil ->
-        {:dowser_client, "~> 0.3.0"}
-
-      path ->
-        {:dowser_client, path: path, override: true}
+    if path = System.get_env("DOWSER_CLIENT_PATH") do
+      {:dowser_client, path: path, override: true}
+    else
+      {:dowser_client, "~> 0.3.0"}
     end
   end
 end
