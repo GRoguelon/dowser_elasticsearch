@@ -80,6 +80,27 @@ defmodule Dowser.Elasticsearch.SearchTest do
     end
   end
 
+  describe "retries" do
+    test "a search is retried after an ambiguous failure, POST or not" do
+      {:ok, requests} = Agent.start_link(fn -> 0 end)
+
+      port =
+        HTTPStub.start_pool(fn _request ->
+          Agent.update(requests, &(&1 + 1))
+          "HTTP/1.1 504 Gateway Timeout\r\nContent-Length: 0\r\n\r\n"
+        end)
+
+      assert {:error, %Error{status: 504}} =
+               Search.search(%{"query" => %{"match_all" => %{}}},
+                 context: context(port),
+                 retry: [base_delay_ms: 1, max_delay_ms: 1]
+               )
+
+      # A search writes nothing, so re-sending it after a 504 is free.
+      assert Agent.get(requests, & &1) == 3
+    end
+  end
+
   describe "search!/2" do
     test "returns the decoded body directly" do
       {port, server} = start_server()

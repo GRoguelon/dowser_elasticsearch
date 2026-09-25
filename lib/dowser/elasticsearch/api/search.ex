@@ -83,7 +83,7 @@ defmodule Dowser.Elasticsearch.Search do
 
     index
     |> Helpers.path("/_search")
-    |> Client.post(query, opts)
+    |> Client.post(query, Helpers.put_idempotent(opts, true))
     |> Helpers.parse_result()
   end
 
@@ -120,7 +120,7 @@ defmodule Dowser.Elasticsearch.Search do
 
     index
     |> Helpers.path("/_msearch")
-    |> Client.post(searches, opts)
+    |> Client.post(searches, Helpers.put_idempotent(opts, true))
     |> Helpers.parse_result()
   end
 
@@ -148,7 +148,7 @@ defmodule Dowser.Elasticsearch.Search do
 
     index
     |> Helpers.path("/_count")
-    |> Client.post(query, opts)
+    |> Client.post(query, Helpers.put_idempotent(opts, true))
     |> Helpers.parse_result()
   end
 
@@ -170,7 +170,7 @@ defmodule Dowser.Elasticsearch.Search do
   def explain(%{} = query, index, id, opts \\ []) do
     with {:ok, path} <- Helpers.required_path(index, "/_explain/" <> URI.encode(id)) do
       path
-      |> Client.post(query, opts)
+      |> Client.post(query, Helpers.put_idempotent(opts, true))
       |> Helpers.parse_result()
     end
   end
@@ -200,7 +200,7 @@ defmodule Dowser.Elasticsearch.Search do
 
     index
     |> Helpers.path("/_field_caps")
-    |> Client.post(body, opts)
+    |> Client.post(body, Helpers.put_idempotent(opts, true))
     |> Helpers.parse_result()
   end
 
@@ -251,7 +251,7 @@ defmodule Dowser.Elasticsearch.Search do
   def terms_enum(%{} = body, index, opts \\ []) do
     with {:ok, path} <- Helpers.required_path(index, "/_terms_enum") do
       path
-      |> Client.post(body, opts)
+      |> Client.post(body, Helpers.put_idempotent(opts, true))
       |> Helpers.parse_result()
     end
   end
@@ -281,7 +281,7 @@ defmodule Dowser.Elasticsearch.Search do
     with {:ok, path} <-
            Helpers.required_path(index, "/_mvt/#{URI.encode(field)}/#{zoom}/#{x}/#{y}") do
       path
-      |> Client.post(body, opts)
+      |> Client.post(body, Helpers.put_idempotent(opts, true))
       |> Helpers.parse_result()
     end
   end
@@ -315,7 +315,7 @@ defmodule Dowser.Elasticsearch.Search do
 
     index
     |> Helpers.path("/_search/template")
-    |> Client.post(template, opts)
+    |> Client.post(template, Helpers.put_idempotent(opts, true))
     |> Helpers.parse_result()
   end
 
@@ -346,7 +346,7 @@ defmodule Dowser.Elasticsearch.Search do
 
     index
     |> Helpers.path("/_msearch/template")
-    |> Client.post(searches, opts)
+    |> Client.post(searches, Helpers.put_idempotent(opts, true))
     |> Helpers.parse_result()
   end
 
@@ -368,7 +368,7 @@ defmodule Dowser.Elasticsearch.Search do
   @spec render_search_template(map(), id(), keyword()) :: result()
   def render_search_template(%{} = template, id, opts \\ []) do
     ("/_render/template/" <> URI.encode(id))
-    |> Client.post(template, opts)
+    |> Client.post(template, Helpers.put_idempotent(opts, true))
     |> Helpers.parse_result()
   end
 
@@ -536,7 +536,7 @@ defmodule Dowser.Elasticsearch.Search do
       end
 
     "/_search/scroll"
-    |> Client.post(body, opts)
+    |> Client.post(body, Helpers.put_idempotent(opts, true))
     |> Helpers.parse_result()
   end
 

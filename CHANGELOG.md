@@ -5,6 +5,138 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - Unreleased
+
+Requires `dowser_client ~> 0.3.0`, which only retries a request that cannot
+already have been applied. Set `DOWSER_CLIENT_PATH` to build against a working
+copy of it.
+
+### Added
+
+- **Every endpoint says whether it is safe to retry.** `dowser_client` derives
+  that from the HTTP method, which is right for a write and wrong for the many
+  Elasticsearch reads that are `POST` requests only because they carry a body.
+  So each endpoint now marks itself:
+
+    * retried after an *ambiguous* failure (a timeout, a dropped connection, a
+      `502`/`504`): `search`, `msearch`, `count`, `explain`, `field_caps`,
+      `terms_enum`, `search_mvt`, `search_template`, `msearch_template`,
+      `render_search_template`, `scroll`, `mget`, `termvectors`,
+      `mtermvectors`, `analyze`, `validate_query`, `disk_usage`,
+      `simulate_index_template`, `simulate_template`, `allocation_explain`,
+      and `index/3` **when it is given an `:id`**;
+    * not retried: everything that writes, including `index/3` with an
+      Elasticsearch-generated id (each attempt would be a new document),
+      `create/4` (the second attempt is a `409`), `update/4`, the by-query
+      endpoints and `reindex/2`.
+
+  `bulk/2` decides per payload: retried only when every action is an `index`
+  or a `delete` naming its own `_id`, so a timed-out bulk can never index the
+  same documents twice. A `:retry` you pass yourself still wins.
+
+
+- **Mappings that are never fetched.** A mapping can now be given outright,
+  so nothing has to be asked of the cluster — which is also what makes casting
+  testable without stubbing the cacher:
+
+  ```elixir
+  # application-wide, no running cacher needed
+  config :dowser_elasticsearch,
+    mappings: %{"posts" => %{"properties" => %{"published_at" => %{"type" => "date"}}}}
+
+  # per test, through a running cacher
+  MappingCacher.put("posts", %{"properties" => %{}})
+
+  # per request
+  Dowser.Elasticsearch.Document.get("posts", "1", decoder: {Codec, mapping: mapping})
+  ```
+
+  A static mapping wins over the cache and never expires.
+
+- `Dowser.Elasticsearch.MappingCacher.lookup/2`, which tells a mapping that
+  cannot exist (`{:ok, nil}`) from one that could not be fetched
+  (`{:error, reason}`). `fetch/2` is unchanged, and remains the lenient read.
+
+### Changed
+
+- **A mapping that can't be fetched no longer silently turns casting off.**
+  `Dowser.Elasticsearch.Codec` cast to identity whenever no mapping came back,
+  whether because there was none or because the `_mapping` request failed — and
+  that request fails exactly when the cluster is overloaded. A `date_range`
+  field was a `Date.Range` on a good day and a raw `%{"gte" => _, "lte" => _}`
+  on a bad one; on the way out, a `Date.Range` was handed to the JSON encoder
+  uncast. Nothing reported it.
+
+  A failed fetch now raises `Dowser.Elasticsearch.MappingError`, which comes
+  back as the `{:error, exception}` every API function already returns, so the
+  request fails instead of the types drifting. The new `:mapping_failure`
+  option takes `:error` (default), `:warn` (log, cast to identity) or
+  `:ignore` (the behaviour before 0.4.0), per request or application-wide:
+
+  ```elixir
+  config :dowser_elasticsearch, mapping_failure: :warn
+  ```
+
+  An index with no mapping, or no index at all, still casts to identity: that
+  is an answer, not a failure.
+
+  Where `:telemetry` is available (a new *optional* dependency — nothing is
+  forced on an application that doesn't already use it), every failed fetch
+  also emits `[:dowser_elasticsearch, :mapping, :failure]`, whatever the
+  policy.
+
+- **`Document.bulk/2` no longer reports a partial failure as a success.**
+  Elasticsearch answers a bulk request `200 OK` with `"errors" => true` and one
+  `items` entry per action, so a request whose documents were half rejected — a
+  per-item `429` under load, a mapping failure — was indistinguishable from one
+  in which everything was indexed: `bulk/2` returned `{:ok, body}` and `bulk!/2`
+  raised nothing.
+
+  `{:ok, body}` now means every item was applied. As soon as one failed, the
+  result is `{:error, %Dowser.Elasticsearch.BulkError{}}`, which carries the
+  failed items (with the operation that caused each), how many succeeded, and
+  `:retryable` — the operations Elasticsearch *rejected* (`429`/`503`), ready to
+  hand straight back to `bulk/2`:
+
+  ```elixir
+  case Dowser.Elasticsearch.Document.bulk(operations, index: "posts") do
+    {:ok, _body} ->
+      :ok
+
+    {:error, %BulkError{retryable: [_ | _] = operations}} ->
+      Dowser.Elasticsearch.Document.bulk(operations, index: "posts")
+  end
+  ```
+
+  Only the rejected items are listed there: resubmitting the whole payload
+  would write the successful ones a second time. A caller that wants the raw
+  response body still has it, on the error's `:body`.
+
+  `bulk!/2` raises that error, so it now raises unless every item was applied.
+
+### Fixed
+
+- **An error body is read whatever its keys are.** `Dowser.Elasticsearch.Error`
+  extracted `:type`/`:reason` from a string-keyed body only, but the body it
+  receives has already been through the client's `:keys` pass — so under
+  `keys: :atoms`/`:atoms!` nothing was found and every message read just
+  `"Elasticsearch responded with HTTP 400"`. Keys are now matched by name, so
+  string- and atom-keyed bodies both yield a type and a reason.
+
+  ```elixir
+  # before, under keys: :atoms
+  "Elasticsearch responded with HTTP 404"
+
+  # after
+  "Elasticsearch responded with HTTP 404: [index_not_found_exception] no such index [missing]"
+  ```
+
+- **A nested cause is surfaced in the reason.** When the error object carries a
+  `root_cause` entry (or a `caused_by`) whose reason says more than the error's
+  own, it is appended — the `search_phase_execution_exception` case, whose
+  reason alone is only `"all shards failed"`, now reads
+  `"all shards failed: No mapping found for [date]"`.
+
 ## [0.3.1] - 2026-09-24
 
 ### Fixed

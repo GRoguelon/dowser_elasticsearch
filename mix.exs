@@ -2,7 +2,7 @@ defmodule DowserElasticsearch.MixProject do
   use Mix.Project
 
   @source_url "https://github.com/GRoguelon/dowser_elasticsearch"
-  @version "0.3.1"
+  @version "0.4.0"
 
   def project do
     [
@@ -103,12 +103,23 @@ defmodule DowserElasticsearch.MixProject do
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
-      {:dowser_client, "~> 0.2.1"},
+      dowser_client(),
+      {:telemetry, "~> 1.2", optional: true},
 
       ## Dev
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
       {:ex_doc, "~> 0.34", only: :dev, runtime: false, warn_if_outdated: true}
     ]
+  end
+
+  # The two packages are developed together: `DOWSER_CLIENT_PATH=../dowser_client`
+  # builds against a working copy instead of the published version.
+  defp dowser_client do
+    if path = System.get_env("DOWSER_CLIENT_PATH") do
+      {:dowser_client, path: path, override: true}
+    else
+      {:dowser_client, "~> 0.3.0"}
+    end
   end
 end

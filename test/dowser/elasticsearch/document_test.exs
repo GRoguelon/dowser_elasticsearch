@@ -1,6 +1,7 @@
 defmodule Dowser.Elasticsearch.DocumentTest do
   use ExUnit.Case, async: false
 
+  alias Dowser.Elasticsearch.BulkError
   alias Dowser.Elasticsearch.Document
   alias Dowser.Elasticsearch.HTTPStub
 
@@ -28,6 +29,20 @@ defmodule Dowser.Elasticsearch.DocumentTest do
 
   defp context(port), do: HTTPStub.context(port)
   defp start_server(response \\ HTTPStub.ok_response()), do: HTTPStub.start_server(response)
+
+  # A gateway that answers every request 504 — ambiguous: the request may have
+  # reached Elasticsearch and been applied.
+  defp counting_gateway do
+    {:ok, requests} = Agent.start_link(fn -> 0 end)
+
+    port =
+      HTTPStub.start_pool(fn _request ->
+        Agent.update(requests, &(&1 + 1))
+        "HTTP/1.1 504 Gateway Timeout\r\nContent-Length: 0\r\n\r\n"
+      end)
+
+    {port, requests}
+  end
 
   defp json_response(body) do
     "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: #{byte_size(body)}\r\n\r\n" <>
@@ -375,6 +390,141 @@ defmodule Dowser.Elasticsearch.DocumentTest do
 
       assert {:ok, _} = Document.bulk([%{}, %{}], index: "posts", context: context(port))
       assert Task.await(server).path == "/posts/_bulk"
+    end
+
+    test "bulk/2 returns a BulkError when an item failed" do
+      body =
+        ~s({"took":5,"errors":true,"items":[) <>
+          ~s({"index":{"_index":"posts","_id":"1","status":201}},) <>
+          ~s({"index":{"_index":"posts","_id":"2","status":429,"error":) <>
+          ~s({"type":"es_rejected_execution_exception","reason":"rejected"}}},) <>
+          ~s({"index":{"_index":"posts","_id":"3","status":400,"error":) <>
+          ~s({"type":"mapper_parsing_exception","reason":"failed to parse"}}}]})
+
+      {port, _server} = start_server(json_response(body))
+
+      operations = [
+        %{"index" => %{"_id" => "1"}},
+        %{"title" => "one"},
+        %{"index" => %{"_id" => "2"}},
+        %{"title" => "two"},
+        %{"index" => %{"_id" => "3"}},
+        %{"title" => "three"}
+      ]
+
+      assert {:error, %BulkError{} = error} =
+               Document.bulk(operations, index: "posts", context: context(port))
+
+      assert error.succeeded == 1
+      assert error.took == 5
+      assert [rejected, malformed] = error.failed
+
+      assert %{
+               position: 1,
+               action: "index",
+               index: "posts",
+               id: "2",
+               status: 429,
+               operation: [%{"index" => %{"_id" => "2"}}, %{"title" => "two"}]
+             } = rejected
+
+      assert rejected.error.type == "es_rejected_execution_exception"
+      assert %{position: 2, status: 400} = malformed
+
+      # Only the rejected item is worth resubmitting — the malformed one would
+      # fail again, and the successful one would be written twice.
+      assert error.retryable == [%{"index" => %{"_id" => "2"}}, %{"title" => "two"}]
+
+      assert Exception.message(error) ==
+               "2 of 3 bulk items failed: 1 × es_rejected_execution_exception, " <>
+                 "1 × mapper_parsing_exception"
+    end
+
+    test "bulk/2 reads an atom-keyed response body" do
+      body =
+        ~s({"errors":true,"items":[{"delete":{"_index":"posts","_id":"1","status":503,) <>
+          ~s("error":{"type":"unavailable_shards_exception","reason":"primary unavailable"}}}]})
+
+      {port, _server} = start_server(json_response(body))
+      operations = [%{"delete" => %{"_id" => "1"}}]
+
+      assert {:error, %BulkError{} = error} =
+               Document.bulk(operations,
+                 index: "posts",
+                 context: context(port) ++ [keys: :atoms]
+               )
+
+      assert [%{action: "delete", status: 503, id: "1"}] = error.failed
+      assert error.retryable == [%{"delete" => %{"_id" => "1"}}]
+      assert error.succeeded == 0
+    end
+
+    test "bulk/2 returns {:ok, body} when every item succeeded" do
+      body = ~s({"took":3,"errors":false,"items":[{"index":{"_index":"posts","status":201}}]})
+      {port, _server} = start_server(json_response(body))
+
+      assert {:ok, %{"errors" => false}} =
+               Document.bulk([%{"index" => %{}}, %{"title" => "hi"}],
+                 index: "posts",
+                 context: context(port)
+               )
+    end
+
+    test "bulk!/2 raises the BulkError a partial failure returns" do
+      body =
+        ~s({"errors":true,"items":[{"create":{"_index":"posts","_id":"1","status":409,) <>
+          ~s("error":{"type":"version_conflict_engine_exception","reason":"already exists"}}}]})
+
+      {port, _server} = start_server(json_response(body))
+
+      assert_raise BulkError,
+                   "1 of 1 bulk items failed: 1 × version_conflict_engine_exception",
+                   fn ->
+                     Document.bulk!([%{"create" => %{"_id" => "1"}}, %{"title" => "hi"}],
+                       index: "posts",
+                       context: context(port)
+                     )
+                   end
+    end
+
+    test "bulk/2 is not retried after an ambiguous failure, unless every action names an id" do
+      {port, requests} = counting_gateway()
+
+      # A 504 may mean the bulk was applied and the answer lost.
+      assert {:error, _} =
+               Document.bulk([%{"index" => %{}}, %{"title" => "hi"}],
+                 index: "posts",
+                 context: context(port),
+                 retry: [base_delay_ms: 1, max_delay_ms: 1]
+               )
+
+      assert Agent.get(requests, & &1) == 1
+
+      Agent.update(requests, fn _ -> 0 end)
+
+      # Every action replaces a document at an id of its own: re-sending it
+      # writes exactly what the first attempt would have.
+      assert {:error, _} =
+               Document.bulk([%{"index" => %{"_id" => "1"}}, %{"title" => "hi"}],
+                 index: "posts",
+                 context: context(port),
+                 retry: [base_delay_ms: 1, max_delay_ms: 1]
+               )
+
+      assert Agent.get(requests, & &1) == 3
+    end
+
+    test "mget/2 is retried after an ambiguous failure — it writes nothing" do
+      {port, requests} = counting_gateway()
+
+      assert {:error, _} =
+               Document.mget(%{"ids" => ["1"]},
+                 index: "posts",
+                 context: context(port),
+                 retry: [base_delay_ms: 1, max_delay_ms: 1]
+               )
+
+      assert Agent.get(requests, & &1) == 3
     end
 
     test "mget/2 POSTs the body to /{index}/_mget" do

@@ -665,7 +665,7 @@ defmodule Dowser.Elasticsearch.Index do
   def simulate_index_template(%{} = body, name, opts \\ []) do
     with {:ok, name_segment} <- Helpers.required_segment(name, "name") do
       ("/_index_template/_simulate_index/" <> name_segment)
-      |> Client.post(body, opts)
+      |> Client.post(body, Helpers.put_idempotent(opts, true))
       |> Helpers.parse_result()
     end
   end
@@ -690,7 +690,7 @@ defmodule Dowser.Elasticsearch.Index do
   def simulate_template(%{} = body, name, opts \\ []) do
     with {:ok, name_segment} <- Helpers.required_segment(name, "name") do
       ("/_index_template/_simulate/" <> name_segment)
-      |> Client.post(body, opts)
+      |> Client.post(body, Helpers.put_idempotent(opts, true))
       |> Helpers.parse_result()
     end
   end
@@ -1236,7 +1236,7 @@ defmodule Dowser.Elasticsearch.Index do
   def disk_usage(index, opts \\ []) do
     with {:ok, path} <- Helpers.required_path(index, "/_disk_usage") do
       path
-      |> Client.post(nil, opts)
+      |> Client.post(nil, Helpers.put_idempotent(opts, true))
       |> Helpers.parse_result()
     end
   end
@@ -1290,7 +1290,7 @@ defmodule Dowser.Elasticsearch.Index do
 
     index
     |> Helpers.path("/_analyze")
-    |> Client.post(body, opts)
+    |> Client.post(body, Helpers.put_idempotent(opts, true))
     |> Helpers.parse_result()
   end
 
@@ -1319,7 +1319,7 @@ defmodule Dowser.Elasticsearch.Index do
 
     index
     |> Helpers.path("/_validate/query")
-    |> Client.post(query, opts)
+    |> Client.post(query, Helpers.put_idempotent(opts, true))
     |> Helpers.parse_result()
   end
 

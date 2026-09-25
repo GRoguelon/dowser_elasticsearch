@@ -3,6 +3,7 @@ defmodule Dowser.Elasticsearch.CodecTest do
 
   alias Dowser.Elasticsearch.Codec
   alias Dowser.Elasticsearch.HTTPStub
+  alias Dowser.Elasticsearch.MappingError
 
   @mapping %{
     "properties" => %{
@@ -690,6 +691,91 @@ defmodule Dowser.Elasticsearch.CodecTest do
 
       assert %{"published_at" => ~U[2026-08-11 00:00:00.000Z]} =
                Codec.decode(body, decode_opts(source: true, index: "posts"))
+    end
+  end
+
+  describe "a mapping that could not be fetched" do
+    defp failing_cacher! do
+      ExUnit.Callbacks.start_supervised!(
+        {Dowser.Elasticsearch.MappingCacher, fetch: fn _context, _index -> {:error, :timeout} end}
+      )
+    end
+
+    test "raises a MappingError by default rather than casting nothing" do
+      failing_cacher!()
+      body = %{"_index" => "posts", "_source" => %{"published_at" => "2026-08-11T00:00:00.000Z"}}
+
+      assert_raise MappingError, ~r/could not fetch the mapping for index "posts"/, fn ->
+        Codec.decode(body, decode_opts())
+      end
+
+      assert_raise MappingError, fn ->
+        Codec.encode(%{"published_at" => ~U[2026-08-11 00:00:00Z]}, context_opts(index: "posts"))
+      end
+    end
+
+    test "casts to identity under mapping_failure: :ignore" do
+      failing_cacher!()
+      body = %{"_index" => "posts", "_source" => %{"published_at" => "2026-08-11T00:00:00.000Z"}}
+
+      assert %{"_source" => %{"published_at" => "2026-08-11T00:00:00.000Z"}} =
+               Codec.decode(body, decode_opts(mapping_failure: :ignore))
+    end
+
+    test "logs and casts to identity under mapping_failure: :warn" do
+      failing_cacher!()
+      body = %{"_index" => "posts", "_source" => %{"published_at" => "2026-08-11T00:00:00.000Z"}}
+
+      log =
+        ExUnit.CaptureLog.capture_log(fn ->
+          assert %{"_source" => %{"published_at" => "2026-08-11T00:00:00.000Z"}} =
+                   Codec.decode(body, decode_opts(mapping_failure: :warn))
+        end)
+
+      assert log =~ "could not fetch the mapping for index \"posts\""
+    end
+
+    test "emits telemetry whatever the policy" do
+      failing_cacher!()
+      event = [:dowser_elasticsearch, :mapping, :failure]
+
+      :telemetry.attach(
+        inspect(self()),
+        event,
+        fn _e, m, meta, _ -> send(self(), {m, meta}) end,
+        nil
+      )
+
+      on_exit(fn -> :telemetry.detach(inspect(self())) end)
+
+      Codec.decode(
+        %{"_index" => "posts", "_source" => %{}},
+        decode_opts(mapping_failure: :ignore)
+      )
+
+      assert_received {%{count: 1}, %{index: "posts", reason: :timeout, policy: :ignore}}
+    end
+
+    test "opts[:mapping] skips the lookup entirely" do
+      failing_cacher!()
+
+      assert %{"published_at" => ~U[2026-08-11 00:00:00.000Z]} =
+               Codec.decode(
+                 %{"published_at" => "2026-08-11T00:00:00.000Z"},
+                 decode_opts(source: true, index: "posts", mapping: @mapping)
+               )
+    end
+
+    test "no mapping to be had is not a failure" do
+      # No cacher running at all: nothing to cast against, and nothing failed.
+      assert %{"_source" => %{"published_at" => "2026-08-11T00:00:00.000Z"}} =
+               Codec.decode(
+                 %{
+                   "_index" => "posts",
+                   "_source" => %{"published_at" => "2026-08-11T00:00:00.000Z"}
+                 },
+                 decode_opts()
+               )
     end
   end
 

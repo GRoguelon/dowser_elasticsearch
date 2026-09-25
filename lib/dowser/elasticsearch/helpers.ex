@@ -4,6 +4,7 @@ defmodule Dowser.Elasticsearch.Helpers do
   alias Dowser.Client.Response
   alias Dowser.Elasticsearch.Error
   alias Dowser.Elasticsearch.Index
+  alias Dowser.Elasticsearch.MappingError
 
   ## Typespecs
 
@@ -28,6 +29,14 @@ defmodule Dowser.Elasticsearch.Helpers do
 
   def parse_result({:ok, %Response{status: status, body: body}}) do
     {:error, Error.new(status, body)}
+  end
+
+  # A codec that raised because it had no mapping to cast against is reported
+  # as itself, not as the `Dowser.Client` decode/encode failure wrapping it:
+  # the caller can do something about the first and nothing about the second.
+  def parse_result({:error, %Dowser.Client.Error{reason: {kind, %MappingError{} = error}}})
+      when kind in [:decode_failed, :encode_failed] do
+    {:error, error}
   end
 
   def parse_result({:error, error}), do: {:error, error}
@@ -124,6 +133,29 @@ defmodule Dowser.Elasticsearch.Helpers do
       opts
     else
       Keyword.put_new(opts, key, format)
+    end
+  end
+
+  @doc """
+  Marks a request as idempotent, so `Dowser.Client.Retry` retries it after an
+  *ambiguous* failure — a timeout, a dropped connection, a `502`/`504` — and
+  not just after one that proves nothing was applied.
+
+  `Dowser.Client` derives this from the HTTP method, which is right for a
+  write but wrong for the many Elasticsearch reads that are `POST` requests
+  because they carry a body: a search must stay retryable, a `_bulk` must not.
+  Only the endpoint knows which it is, so each says so here.
+
+  A `:retry` the caller set wins, including `retry: false`.
+  """
+  @spec put_idempotent(keyword(), boolean()) :: keyword()
+  def put_idempotent(opts, idempotent?) do
+    case Keyword.get(opts, :retry, []) do
+      retry when is_list(retry) ->
+        Keyword.put(opts, :retry, Keyword.put_new(retry, :idempotent, idempotent?))
+
+      _disabled_or_invalid ->
+        opts
     end
   end
 

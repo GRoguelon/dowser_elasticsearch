@@ -155,6 +155,48 @@ defmodule Dowser.Elasticsearch.MappingCacherTest do
     end
   end
 
+  describe "lookup/2" do
+    test "returns {:ok, nil} when there is no index, no context or no cacher" do
+      assert {:ok, nil} = MappingCacher.lookup(@context, nil)
+      assert {:ok, nil} = MappingCacher.lookup(nil, "posts")
+
+      # No cacher running: an application that doesn't cast, not a failed fetch.
+      assert {:ok, nil} = MappingCacher.lookup(@context, "posts")
+    end
+
+    test "returns the error when the fetch fails, where fetch/2 returns nil" do
+      start_supervised!({MappingCacher, fetch: fn _context, _index -> {:error, :nxdomain} end})
+
+      assert {:error, :nxdomain} = MappingCacher.lookup(@context, "posts")
+      assert MappingCacher.fetch(@context, "posts") == nil
+    end
+
+    test "a static mapping answers without any fetch" do
+      Application.put_env(:dowser_elasticsearch, :mappings, %{"posts" => %{"properties" => %{}}})
+      on_exit(fn -> Application.delete_env(:dowser_elasticsearch, :mappings) end)
+
+      start_supervised!({MappingCacher, fetch: fn _context, _index -> {:error, :boom} end})
+
+      assert {:ok, %{"properties" => %{}}} = MappingCacher.lookup(@context, "posts")
+      assert {:error, :boom} = MappingCacher.lookup(@context, "comments")
+    end
+  end
+
+  describe "put/3" do
+    test "caches a mapping directly, without fetching" do
+      start_supervised!({MappingCacher, fetch: fn _context, _index -> {:error, :boom} end})
+
+      assert :ok = MappingCacher.put("posts", %{"properties" => %{}}, context: @context)
+      assert {:ok, %{"properties" => %{}}} = MappingCacher.lookup(@context, "posts")
+    end
+
+    test "raises when the cacher is not running" do
+      assert_raise RuntimeError, ~r/is not running/, fn ->
+        MappingCacher.put("posts", %{})
+      end
+    end
+  end
+
   describe "invalidate/2" do
     test "removes a single cached entry, forcing a re-fetch" do
       counter = :counters.new(1, [])
