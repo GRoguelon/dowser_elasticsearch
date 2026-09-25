@@ -35,6 +35,32 @@ defmodule Dowser.Elasticsearch.Bulk do
   end
 
   @doc """
+  Whether re-sending this operation list after an ambiguous failure — a
+  timeout, a dropped connection — can do anything the first attempt may
+  already have done.
+
+  True only when every action is an `index` or a `delete` naming its own
+  `_id`: replacing a document at a known id, or deleting it, gives the same
+  result however many times it happens. An auto-id `index` writes a new
+  document each attempt, a `create` fails with a `409` once the first attempt
+  landed, and an `update` may run a script that counts.
+  """
+  @spec idempotent?([map()]) :: boolean()
+  def idempotent?(operations) do
+    operations
+    |> chunks()
+    |> Enum.all?(fn [header | _payload] ->
+      case action(header) do
+        {action, value} when action in [:index, :delete] ->
+          Body.value(value, "_id") != nil
+
+        _other ->
+          false
+      end
+    end)
+  end
+
+  @doc """
   Groups a flat operation list into one chunk per action: `[action, payload]`,
   or `[action]` for a `delete` (which carries no payload).
 

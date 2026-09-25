@@ -87,6 +87,11 @@ defmodule Dowser.Elasticsearch.Document do
         "/_doc"
       end
 
+    # Indexing at an id the caller chose is a replace, so re-sending it after
+    # an ambiguous failure changes nothing. Letting Elasticsearch generate the
+    # id makes every attempt a new document.
+    opts = Helpers.put_idempotent(opts, not is_nil(id))
+
     with {:ok, path} <- Helpers.required_path(index, suffix) do
       path
       |> Client.post(document, opts)
@@ -313,6 +318,7 @@ defmodule Dowser.Elasticsearch.Document do
       opts
       |> Client.put_codec()
       |> Helpers.put_default_format(:req_format, :ndjson)
+      |> Helpers.put_idempotent(Bulk.idempotent?(operations))
 
     index
     |> Helpers.path("/_bulk")
@@ -347,7 +353,7 @@ defmodule Dowser.Elasticsearch.Document do
 
     index
     |> Helpers.path("/_mget")
-    |> Client.post(body, opts)
+    |> Client.post(body, Helpers.put_idempotent(opts, true))
     |> Helpers.parse_result()
   end
 
@@ -521,7 +527,7 @@ defmodule Dowser.Elasticsearch.Document do
 
     with {:ok, path} <- Helpers.required_path(index, suffix) do
       path
-      |> Client.post(body, opts)
+      |> Client.post(body, Helpers.put_idempotent(opts, true))
       |> Helpers.parse_result()
     end
   end
@@ -551,7 +557,7 @@ defmodule Dowser.Elasticsearch.Document do
 
     index
     |> Helpers.path("/_mtermvectors")
-    |> Client.post(body, opts)
+    |> Client.post(body, Helpers.put_idempotent(opts, true))
     |> Helpers.parse_result()
   end
 

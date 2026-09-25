@@ -197,10 +197,11 @@ defmodule Dowser.Elasticsearch.Codec do
     * `:warn` — log a warning and cast to identity.
     * `:ignore` — cast to identity, silently. The behaviour before 0.4.0.
 
-  Every failed fetch emits `[:dowser_elasticsearch, :mapping, :failure]` via
-  `:telemetry` whatever the policy, with `%{index: index, reason: reason,
-  policy: policy}` as metadata — the place to count them without a log line
-  per document.
+  Where `:telemetry` is available — an optional dependency, so only if your
+  application already pulls it in — every failed fetch also emits
+  `[:dowser_elasticsearch, :mapping, :failure]` whatever the policy, with
+  `%{index: index, reason: reason, policy: policy}` as metadata: the place to
+  count them without a log line per document.
   """
 
   require Logger
@@ -384,11 +385,7 @@ defmodule Dowser.Elasticsearch.Codec do
   defp failed(index, reason, opts) do
     policy = mapping_failure(opts)
 
-    :telemetry.execute(
-      [:dowser_elasticsearch, :mapping, :failure],
-      %{count: 1},
-      %{index: index, reason: reason, policy: policy}
-    )
+    emit_failure(%{index: index, reason: reason, policy: policy})
 
     case policy do
       :error ->
@@ -402,6 +399,16 @@ defmodule Dowser.Elasticsearch.Codec do
       :ignore ->
         nil
     end
+  end
+
+  # `:telemetry` is an optional dependency: the event is emitted for the
+  # applications that have it, and costs nothing for the ones that don't.
+  if Code.ensure_loaded?(:telemetry) do
+    defp emit_failure(metadata) do
+      :telemetry.execute([:dowser_elasticsearch, :mapping, :failure], %{count: 1}, metadata)
+    end
+  else
+    defp emit_failure(_metadata), do: :ok
   end
 
   defp mapping_failure(opts) do

@@ -137,6 +137,29 @@ defmodule Dowser.Elasticsearch.Helpers do
   end
 
   @doc """
+  Marks a request as idempotent, so `Dowser.Client.Retry` retries it after an
+  *ambiguous* failure — a timeout, a dropped connection, a `502`/`504` — and
+  not just after one that proves nothing was applied.
+
+  `Dowser.Client` derives this from the HTTP method, which is right for a
+  write but wrong for the many Elasticsearch reads that are `POST` requests
+  because they carry a body: a search must stay retryable, a `_bulk` must not.
+  Only the endpoint knows which it is, so each says so here.
+
+  A `:retry` the caller set wins, including `retry: false`.
+  """
+  @spec put_idempotent(keyword(), boolean()) :: keyword()
+  def put_idempotent(opts, idempotent?) do
+    case Keyword.get(opts, :retry, []) do
+      retry when is_list(retry) ->
+        Keyword.put(opts, :retry, Keyword.put_new(retry, :idempotent, idempotent?))
+
+      _disabled_or_invalid ->
+        opts
+    end
+  end
+
+  @doc """
   Appends a query-string parameter to `opts[:params]`, preserving any params
   the caller already set.
   """

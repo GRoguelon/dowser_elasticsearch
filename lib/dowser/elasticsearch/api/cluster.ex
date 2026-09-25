@@ -304,7 +304,7 @@ defmodule Dowser.Elasticsearch.Cluster do
   @spec allocation_explain(map(), keyword()) :: result()
   def allocation_explain(%{} = body, opts \\ []) do
     "/_cluster/allocation/explain"
-    |> Client.post(body, opts)
+    |> Client.post(body, Helpers.put_idempotent(opts, true))
     |> Helpers.parse_result()
   end
 

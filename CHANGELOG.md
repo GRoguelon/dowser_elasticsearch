@@ -7,7 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.4.0] - Unreleased
 
+Requires `dowser_client ~> 0.3.0`, which only retries a request that cannot
+already have been applied. Set `DOWSER_CLIENT_PATH` to build against a working
+copy of it.
+
 ### Added
+
+- **Every endpoint says whether it is safe to retry.** `dowser_client` derives
+  that from the HTTP method, which is right for a write and wrong for the many
+  Elasticsearch reads that are `POST` requests only because they carry a body.
+  So each endpoint now marks itself:
+
+    * retried after an *ambiguous* failure (a timeout, a dropped connection, a
+      `502`/`504`): `search`, `msearch`, `count`, `explain`, `field_caps`,
+      `terms_enum`, `search_mvt`, `search_template`, `msearch_template`,
+      `render_search_template`, `scroll`, `mget`, `termvectors`,
+      `mtermvectors`, `analyze`, `validate_query`, `disk_usage`,
+      `simulate_index_template`, `simulate_template`, `allocation_explain`,
+      and `index/3` **when it is given an `:id`**;
+    * not retried: everything that writes, including `index/3` with an
+      Elasticsearch-generated id (each attempt would be a new document),
+      `create/4` (the second attempt is a `409`), `update/4`, the by-query
+      endpoints and `reindex/2`.
+
+  `bulk/2` decides per payload: retried only when every action is an `index`
+  or a `delete` naming its own `_id`, so a timed-out bulk can never index the
+  same documents twice. A `:retry` you pass yourself still wins.
+
 
 - **Mappings that are never fetched.** A mapping can now be given outright,
   so nothing has to be asked of the cluster — which is also what makes casting
@@ -54,8 +80,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   An index with no mapping, or no index at all, still casts to identity: that
   is an answer, not a failure.
 
-  Every failed fetch also emits `[:dowser_elasticsearch, :mapping, :failure]`
-  through `:telemetry` (a new dependency), whatever the policy.
+  Where `:telemetry` is available (a new *optional* dependency — nothing is
+  forced on an application that doesn't already use it), every failed fetch
+  also emits `[:dowser_elasticsearch, :mapping, :failure]`, whatever the
+  policy.
 
 - **`Document.bulk/2` no longer reports a partial failure as a success.**
   Elasticsearch answers a bulk request `200 OK` with `"errors" => true` and one

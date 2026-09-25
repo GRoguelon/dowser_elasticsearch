@@ -30,6 +30,20 @@ defmodule Dowser.Elasticsearch.DocumentTest do
   defp context(port), do: HTTPStub.context(port)
   defp start_server(response \\ HTTPStub.ok_response()), do: HTTPStub.start_server(response)
 
+  # A gateway that answers every request 504 — ambiguous: the request may have
+  # reached Elasticsearch and been applied.
+  defp counting_gateway do
+    {:ok, requests} = Agent.start_link(fn -> 0 end)
+
+    port =
+      HTTPStub.start_pool(fn _request ->
+        Agent.update(requests, &(&1 + 1))
+        "HTTP/1.1 504 Gateway Timeout\r\nContent-Length: 0\r\n\r\n"
+      end)
+
+    {port, requests}
+  end
+
   defp json_response(body) do
     "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: #{byte_size(body)}\r\n\r\n" <>
       body
@@ -471,6 +485,46 @@ defmodule Dowser.Elasticsearch.DocumentTest do
                        context: context(port)
                      )
                    end
+    end
+
+    test "bulk/2 is not retried after an ambiguous failure, unless every action names an id" do
+      {port, requests} = counting_gateway()
+
+      # A 504 may mean the bulk was applied and the answer lost.
+      assert {:error, _} =
+               Document.bulk([%{"index" => %{}}, %{"title" => "hi"}],
+                 index: "posts",
+                 context: context(port),
+                 retry: [base_delay_ms: 1, max_delay_ms: 1]
+               )
+
+      assert Agent.get(requests, & &1) == 1
+
+      Agent.update(requests, fn _ -> 0 end)
+
+      # Every action replaces a document at an id of its own: re-sending it
+      # writes exactly what the first attempt would have.
+      assert {:error, _} =
+               Document.bulk([%{"index" => %{"_id" => "1"}}, %{"title" => "hi"}],
+                 index: "posts",
+                 context: context(port),
+                 retry: [base_delay_ms: 1, max_delay_ms: 1]
+               )
+
+      assert Agent.get(requests, & &1) == 3
+    end
+
+    test "mget/2 is retried after an ambiguous failure — it writes nothing" do
+      {port, requests} = counting_gateway()
+
+      assert {:error, _} =
+               Document.mget(%{"ids" => ["1"]},
+                 index: "posts",
+                 context: context(port),
+                 retry: [base_delay_ms: 1, max_delay_ms: 1]
+               )
+
+      assert Agent.get(requests, & &1) == 3
     end
 
     test "mget/2 POSTs the body to /{index}/_mget" do
