@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.2] - Unreleased
+
+### Fixed
+
+- **An error body is read whatever its keys are.** `Dowser.Elasticsearch.Error`
+  extracted `:type`/`:reason` from a string-keyed body only, but the body it
+  receives has already been through the client's `:keys` pass — so under
+  `keys: :atoms`/`:atoms!` nothing was found and every message read just
+  `"Elasticsearch responded with HTTP 400"`. Keys are now matched by name, so
+  string- and atom-keyed bodies both yield a type and a reason.
+
+  ```elixir
+  # before, under keys: :atoms
+  "Elasticsearch responded with HTTP 404"
+
+  # after
+  "Elasticsearch responded with HTTP 404: [index_not_found_exception] no such index [missing]"
+  ```
+
+- **A nested cause is surfaced in the reason.** When the error object carries a
+  `root_cause` entry (or a `caused_by`) whose reason says more than the error's
+  own, it is appended — the `search_phase_execution_exception` case, whose
+  reason alone is only `"all shards failed"`, now reads
+  `"all shards failed: No mapping found for [date]"`.
+
 ## [0.3.1] - 2026-09-24
 
 ### Fixed

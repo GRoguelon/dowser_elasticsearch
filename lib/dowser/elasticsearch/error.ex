@@ -6,6 +6,13 @@ defmodule Dowser.Elasticsearch.Error do
   When the body is a standard Elasticsearch error object
   (`%{"error" => %{"type" => ..., "reason" => ...}}`), `:type` and `:reason` are
   extracted for convenience.
+
+  The body reaches this module after `Dowser.Client` has applied the configured
+  `:keys` option, so its keys may be strings (the default) or atoms
+  (`keys: :atoms`/`:atoms!`); both shapes are recognised. When the error object
+  carries a `root_cause`/`caused_by` entry whose reason adds something — the
+  case with `search_phase_execution_exception`, whose own reason is just
+  `"all shards failed"` — that nested reason is appended to `:reason`.
   """
 
   @type t :: %__MODULE__{
@@ -38,7 +45,71 @@ defmodule Dowser.Elasticsearch.Error do
     end
   end
 
-  defp extract(%{"error" => %{} = error}), do: {Map.get(error, "type"), Map.get(error, "reason")}
-  defp extract(%{"error" => error}) when is_binary(error), do: {nil, error}
+  defp extract(%{} = body) when not is_struct(body) do
+    case value(body, "error") do
+      %{} = error ->
+        {value(error, "type"), reason(error)}
+
+      error when is_binary(error) ->
+        {nil, error}
+
+      _other ->
+        {nil, nil}
+    end
+  end
+
   defp extract(_body), do: {nil, nil}
+
+  defp reason(error) do
+    case {value(error, "reason"), nested_reason(error)} do
+      {reason, nested} when is_binary(reason) and is_binary(nested) ->
+        if String.contains?(reason, nested) do
+          reason
+        else
+          reason <> ": " <> nested
+        end
+
+      {reason, _nested} when is_binary(reason) ->
+        reason
+
+      {_reason, nested} ->
+        nested
+    end
+  end
+
+  defp nested_reason(error) do
+    cause =
+      case value(error, "root_cause") do
+        [first | _] ->
+          first
+
+        _other ->
+          value(error, "caused_by")
+      end
+
+    with %{} = cause <- cause,
+         reason when is_binary(reason) <- value(cause, "reason") do
+      reason
+    else
+      _other ->
+        nil
+    end
+  end
+
+  # Keys come out of the client as strings or atoms, depending on its `:keys`
+  # option, so they are matched by name rather than by shape.
+  defp value(map, name) when is_map(map) do
+    case Enum.find(map, fn {key, _value} -> named?(key, name) end) do
+      {_key, value} ->
+        value
+
+      nil ->
+        nil
+    end
+  end
+
+  defp value(_map, _name), do: nil
+
+  defp named?(key, name) when is_binary(key) or is_atom(key), do: to_string(key) == name
+  defp named?(_key, _name), do: false
 end
