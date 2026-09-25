@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.1] - 2026-09-25
+
+### Fixed
+
+- **`mix.lock` still pinned `dowser_client` 0.2.1**, which 0.4.0's own
+  requirement (`~> 0.3.0`) rules out. It never reached users — `mix.lock` is
+  not part of the published package — but a fresh checkout of the repository
+  had a lock that contradicted `mix.exs`, so `mix test` refused to run until
+  `mix deps.get` resolved it. The lock now names 0.3.0.
+
 ## [0.4.0] - 2026-09-25
 
 Requires `dowser_client ~> 0.3.0`, which only retries a request that cannot
