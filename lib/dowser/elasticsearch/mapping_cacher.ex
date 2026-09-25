@@ -26,6 +26,25 @@ defmodule Dowser.Elasticsearch.MappingCacher do
 
   Whether the cacher is started at all (and with which options) is decided by
   the supervisor — see Dowser.Elasticsearch.Application.
+
+  ## Mappings that are never fetched
+
+  A mapping given in the application environment answers for its index without
+  any request at all — and so can never fail to be fetched:
+
+      config :dowser_elasticsearch,
+        mappings: %{"posts" => %{"properties" => %{"published_at" => %{"type" => "date"}}}}
+
+  It wins over the cache. Use it for an index whose mapping is pinned, and in
+  test suites, where it makes casting behave as it does in production without
+  a cluster to ask (`put/3` does the same through a running cacher).
+
+  ## When a fetch fails
+
+  `lookup/2` distinguishes "there is no mapping" from "the mapping could not be
+  fetched"; `fetch/2` is the lenient read that folds both into `nil`. The
+  difference matters because the second silently changes the *type* of what a
+  caller gets back — see `Dowser.Elasticsearch.Codec`'s `:mapping_failure`.
   """
 
   use GenServer
@@ -35,6 +54,7 @@ defmodule Dowser.Elasticsearch.MappingCacher do
   alias Dowser.Client.Context
 
   @table __MODULE__
+  @forever :timer.hours(24 * 365 * 100)
   @default_ttl :timer.minutes(5)
   @default_sweep :timer.minutes(1)
   @call_timeout :timer.seconds(15)
@@ -89,32 +109,88 @@ defmodule Dowser.Elasticsearch.MappingCacher do
   end
 
   @doc """
-  Like `get/2`, but returns the mapping directly, or `nil` when there is none
-  to be had — no index, no cacher running, or a failing fetch.
+  Like `get/2`, but tells a mapping that *cannot exist* apart from one that
+  *could not be fetched* — which `get/2` reports the same way, and which the
+  caller must not: casting against no mapping is correct for the first and
+  silently wrong for the second.
 
-  This is what `Dowser.Elasticsearch.Codec` calls: a mapping that can't be
-  resolved degrades a cast to identity rather than failing the request.
+    * `{:ok, mapping}` — a static mapping, a cached one, or a freshly fetched
+      one.
+    * `{:ok, nil}` — there is no mapping to be had: no index named, or no
+      cacher running (an application that doesn't cast at all).
+    * `{:error, reason}` — the fetch failed. The mapping may well exist; this
+      request just couldn't see it. `Dowser.Elasticsearch.Codec` turns this
+      into a `Dowser.Elasticsearch.MappingError` by default, rather than
+      casting nothing and handing back raw JSON values.
+
+  A static mapping (`config :dowser_elasticsearch, mappings: %{...}`) wins over
+  the cache and is never fetched, so it cannot fail.
+  """
+  @spec lookup(Context.ref(), term()) :: {:ok, map() | nil} | {:error, term()}
+  def lookup(context, index)
+
+  def lookup(nil, _index), do: {:ok, nil}
+  def lookup(_context, nil), do: {:ok, nil}
+
+  def lookup(context, index) do
+    case static(index) do
+      nil ->
+        cached(context, index)
+
+      mapping ->
+        {:ok, mapping}
+    end
+  end
+
+  @doc """
+  Like `lookup/2`, but returns the mapping directly, or `nil` when there is
+  none to be had *or* the fetch failed.
+
+  The lenient read: a mapping that can't be resolved degrades a cast to
+  identity rather than failing the request. `Dowser.Elasticsearch.Codec` uses
+  it only under `mapping_failure: :ignore`.
   """
   @spec fetch(Context.ref(), term()) :: map() | nil
-  def fetch(context, index)
-
-  def fetch(nil, _index), do: nil
-  def fetch(_context, nil), do: nil
-
   def fetch(context, index) do
-    case get(context, index) do
+    case lookup(context, index) do
       {:ok, mapping} ->
         mapping
 
-      _error ->
+      {:error, _reason} ->
         nil
     end
-  rescue
-    _exception ->
-      nil
-  catch
-    :exit, _reason ->
-      nil
+  end
+
+  @doc """
+  Caches `mapping` for `index` directly, without fetching anything.
+
+  The seam tests use, so that casting behaves the way it does in production
+  instead of degrading to identity for want of a cluster to ask:
+
+      setup do
+        Dowser.Elasticsearch.MappingCacher.put("posts", %{"properties" => %{...}})
+      end
+
+  ## Options
+
+    * `:context` — the context the entry belongs to, as in `key/2`
+      (default `nil`, the unauthenticated one).
+    * `:ttl` — entry lifetime in ms (default `:infinity`, unlike a fetched
+      entry: an entry put by hand is not a cached answer that can go stale).
+
+  For a mapping that is *always* known — a pinned index, a test suite that
+  never starts the cacher — `config :dowser_elasticsearch, mappings: %{...}`
+  needs no running cacher at all.
+  """
+  @spec put(term(), map(), keyword()) :: :ok
+  def put(index, mapping, opts \\ []) when is_map(mapping) do
+    if not running?() do
+      raise "#{inspect(__MODULE__)} is not running; start it before putting a mapping into it"
+    end
+
+    ttl = Keyword.get(opts, :ttl, :infinity)
+
+    GenServer.call(__MODULE__, {:put, Keyword.get(opts, :context), index, mapping, ttl})
   end
 
   @doc "Invalidates a single `{context, index}` entry."
@@ -165,6 +241,14 @@ defmodule Dowser.Elasticsearch.MappingCacher do
 
         {:noreply, state}
     end
+  end
+
+  def handle_call({:put, context, index, mapping, ttl}, _from, state) do
+    with {:ok, resolved} <- Context.resolve(context) do
+      store(key(resolved, index), mapping, to_native(ttl))
+    end
+
+    {:reply, :ok, state}
   end
 
   def handle_call({:invalidate, context, index}, _from, state) do
@@ -229,6 +313,37 @@ defmodule Dowser.Elasticsearch.MappingCacher do
 
   ## Reads (run in the caller's process, straight off ETS)
 
+  # A mapping given in the application environment is the answer, whatever the
+  # cluster would say — no request, so nothing to fail.
+  defp static(index) do
+    :dowser_elasticsearch
+    |> Application.get_env(:mappings, %{})
+    |> Enum.find_value(fn {name, mapping} -> named?(name, index) && mapping end)
+  end
+
+  defp named?(name, index) when is_binary(index) or is_atom(index),
+    do: to_string(name) == to_string(index)
+
+  defp named?(name, index), do: name == index
+
+  defp cached(context, index) do
+    if running?() do
+      get(context, index)
+    else
+      {:ok, nil}
+    end
+  rescue
+    exception ->
+      {:error, exception}
+  catch
+    :exit, reason ->
+      {:error, {:exit, reason}}
+  end
+
+  # Nothing to read from and nothing to ask: an application that doesn't cast
+  # doesn't start the cacher, and that is not a failed fetch.
+  defp running?, do: :ets.whereis(@table) != :undefined
+
   defp fresh_lookup(key) do
     case :ets.lookup(@table, key) do
       [{^key, value, expires_at}] ->
@@ -272,6 +387,9 @@ defmodule Dowser.Elasticsearch.MappingCacher do
   defp store(key, value, ttl),
     do: :ets.insert(@table, {key, value, System.monotonic_time() + ttl})
 
+  # An entry that never expires still carries a deadline, so the sweep and the
+  # lazy check stay one comparison rather than two shapes.
+  defp to_native(:infinity), do: to_native(@forever)
   defp to_native(ms), do: System.convert_time_unit(ms, :millisecond, :native)
 
   defp schedule_sweep(interval) when is_integer(interval) and interval > 0,

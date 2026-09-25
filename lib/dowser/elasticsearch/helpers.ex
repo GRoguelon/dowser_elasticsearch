@@ -4,6 +4,7 @@ defmodule Dowser.Elasticsearch.Helpers do
   alias Dowser.Client.Response
   alias Dowser.Elasticsearch.Error
   alias Dowser.Elasticsearch.Index
+  alias Dowser.Elasticsearch.MappingError
 
   ## Typespecs
 
@@ -28,6 +29,14 @@ defmodule Dowser.Elasticsearch.Helpers do
 
   def parse_result({:ok, %Response{status: status, body: body}}) do
     {:error, Error.new(status, body)}
+  end
+
+  # A codec that raised because it had no mapping to cast against is reported
+  # as itself, not as the `Dowser.Client` decode/encode failure wrapping it:
+  # the caller can do something about the first and nothing about the second.
+  def parse_result({:error, %Dowser.Client.Error{reason: {kind, %MappingError{} = error}}})
+      when kind in [:decode_failed, :encode_failed] do
+    {:error, error}
   end
 
   def parse_result({:error, error}), do: {:error, error}

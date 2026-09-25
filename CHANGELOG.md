@@ -7,7 +7,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.4.0] - Unreleased
 
+### Added
+
+- **Mappings that are never fetched.** A mapping can now be given outright,
+  so nothing has to be asked of the cluster — which is also what makes casting
+  testable without stubbing the cacher:
+
+  ```elixir
+  # application-wide, no running cacher needed
+  config :dowser_elasticsearch,
+    mappings: %{"posts" => %{"properties" => %{"published_at" => %{"type" => "date"}}}}
+
+  # per test, through a running cacher
+  MappingCacher.put("posts", %{"properties" => %{}})
+
+  # per request
+  Dowser.Elasticsearch.Document.get("posts", "1", decoder: {Codec, mapping: mapping})
+  ```
+
+  A static mapping wins over the cache and never expires.
+
+- `Dowser.Elasticsearch.MappingCacher.lookup/2`, which tells a mapping that
+  cannot exist (`{:ok, nil}`) from one that could not be fetched
+  (`{:error, reason}`). `fetch/2` is unchanged, and remains the lenient read.
+
 ### Changed
+
+- **A mapping that can't be fetched no longer silently turns casting off.**
+  `Dowser.Elasticsearch.Codec` cast to identity whenever no mapping came back,
+  whether because there was none or because the `_mapping` request failed — and
+  that request fails exactly when the cluster is overloaded. A `date_range`
+  field was a `Date.Range` on a good day and a raw `%{"gte" => _, "lte" => _}`
+  on a bad one; on the way out, a `Date.Range` was handed to the JSON encoder
+  uncast. Nothing reported it.
+
+  A failed fetch now raises `Dowser.Elasticsearch.MappingError`, which comes
+  back as the `{:error, exception}` every API function already returns, so the
+  request fails instead of the types drifting. The new `:mapping_failure`
+  option takes `:error` (default), `:warn` (log, cast to identity) or
+  `:ignore` (the behaviour before 0.4.0), per request or application-wide:
+
+  ```elixir
+  config :dowser_elasticsearch, mapping_failure: :warn
+  ```
+
+  An index with no mapping, or no index at all, still casts to identity: that
+  is an answer, not a failure.
+
+  Every failed fetch also emits `[:dowser_elasticsearch, :mapping, :failure]`
+  through `:telemetry` (a new dependency), whatever the policy.
 
 - **`Document.bulk/2` no longer reports a partial failure as a success.**
   Elasticsearch answers a bulk request `200 OK` with `"errors" => true` and one

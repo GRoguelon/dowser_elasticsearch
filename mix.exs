@@ -104,6 +104,7 @@ defmodule DowserElasticsearch.MixProject do
   defp deps do
     [
       {:dowser_client, "~> 0.2.1"},
+      {:telemetry, "~> 1.2"},
 
       ## Dev
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},

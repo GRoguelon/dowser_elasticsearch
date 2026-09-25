@@ -172,11 +172,43 @@ defmodule Dowser.Elasticsearch.Codec do
     * `:source` — `true` when a response body is a bare `_source` document with
       no `_index` of its own (`Dowser.Elasticsearch.Document.get_source/3`).
       Set by the API function itself.
+    * `:mapping` — a mapping to cast against, instead of looking one up. Skips
+      `Dowser.Elasticsearch.MappingCacher` entirely.
+    * `:mapping_failure` — what to do when a mapping *cannot be fetched*; see
+      below. Defaults to the application environment
+      (`config :dowser_elasticsearch, mapping_failure: ...`), itself
+      `:error`.
+
+  ## When the mapping can't be fetched
+
+  An index with no mapping, and no index to speak of, both cast to identity:
+  there is nothing to dispatch on, and that is a correct answer.
+
+  A mapping that could not be *fetched* is a different thing. The fetch is an
+  Elasticsearch request like any other, so it fails when the cluster is
+  overloaded — and casting to identity there means the same field comes back as
+  a `Date.Range` on a good day and a `%{"gte" => _, "lte" => _}` on a bad one,
+  a document source is written with a `Date.Range` the JSON encoder chokes on,
+  and nothing says so. `:mapping_failure` decides what happens instead:
+
+    * `:error` (default) — raise `Dowser.Elasticsearch.MappingError`, which
+      `dowser_client` turns into the `{:error, exception}` every API function
+      already returns. The request fails; the types don't drift.
+    * `:warn` — log a warning and cast to identity.
+    * `:ignore` — cast to identity, silently. The behaviour before 0.4.0.
+
+  Every failed fetch emits `[:dowser_elasticsearch, :mapping, :failure]` via
+  `:telemetry` whatever the policy, with `%{index: index, reason: reason,
+  policy: policy}` as metadata — the place to count them without a log line
+  per document.
   """
+
+  require Logger
 
   alias Dowser.Elasticsearch.Bulk
   alias Dowser.Elasticsearch.Mappable
   alias Dowser.Elasticsearch.MappingCacher
+  alias Dowser.Elasticsearch.MappingError
 
   ## Behaviour callbacks
 
@@ -217,16 +249,13 @@ defmodule Dowser.Elasticsearch.Codec do
   @spec decode(term(), keyword()) :: term()
   def decode(body, opts) do
     key_fn = Keyword.fetch!(opts, :key_fn)
-    context = Keyword.get(opts, :context)
     codec = codec(opts)
     load = &codec.load/2
 
     if Keyword.get(opts, :source, false) do
-      mapping = MappingCacher.fetch(context, Keyword.get(opts, :index))
-
-      Mappable.decode(body, mapping, key_fn, load)
+      Mappable.decode(body, mapping(Keyword.get(opts, :index), opts), key_fn, load)
     else
-      Mappable.decode(body, mapping_fn(context), key_fn, load)
+      Mappable.decode(body, mapping_fn(opts), key_fn, load)
     end
   end
 
@@ -240,9 +269,8 @@ defmodule Dowser.Elasticsearch.Codec do
   @spec encode(term(), keyword()) :: term()
   def encode(source, opts) do
     codec = codec(opts)
-    mapping = MappingCacher.fetch(Keyword.get(opts, :context), Keyword.get(opts, :index))
 
-    Mappable.encode(source, mapping, &codec.dump/2, false)
+    Mappable.encode(source, mapping(Keyword.get(opts, :index), opts), &codec.dump/2, false)
   end
 
   @doc """
@@ -325,10 +353,60 @@ defmodule Dowser.Elasticsearch.Codec do
     Keyword.get(opts, :codec) || Application.get_env(:dowser_elasticsearch, :codec, __MODULE__)
   end
 
+  ## Private functions — the mapping
+
   # A hit carries the index it came from, so its mapping is resolved lazily,
   # per document, as the envelope is walked.
-  defp mapping_fn(context) do
-    fn index -> {:ok, MappingCacher.fetch(context, index)} end
+  defp mapping_fn(opts) do
+    fn index -> {:ok, mapping(index, opts)} end
+  end
+
+  defp mapping(index, opts) do
+    case Keyword.get(opts, :mapping) do
+      nil ->
+        lookup(index, opts)
+
+      mapping ->
+        mapping
+    end
+  end
+
+  defp lookup(index, opts) do
+    case MappingCacher.lookup(Keyword.get(opts, :context), index) do
+      {:ok, mapping} ->
+        mapping
+
+      {:error, reason} ->
+        failed(index, reason, opts)
+    end
+  end
+
+  defp failed(index, reason, opts) do
+    policy = mapping_failure(opts)
+
+    :telemetry.execute(
+      [:dowser_elasticsearch, :mapping, :failure],
+      %{count: 1},
+      %{index: index, reason: reason, policy: policy}
+    )
+
+    case policy do
+      :error ->
+        raise MappingError, index: index, reason: reason
+
+      :warn ->
+        Logger.warning(Exception.message(%MappingError{index: index, reason: reason}))
+
+        nil
+
+      :ignore ->
+        nil
+    end
+  end
+
+  defp mapping_failure(opts) do
+    Keyword.get(opts, :mapping_failure) ||
+      Application.get_env(:dowser_elasticsearch, :mapping_failure, :error)
   end
 
   ## Private functions — bulk
