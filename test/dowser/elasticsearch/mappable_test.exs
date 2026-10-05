@@ -3,6 +3,14 @@ defmodule Dowser.Elasticsearch.MappableTest do
 
   alias Dowser.Elasticsearch.Mappable
 
+  defmodule Author do
+    defstruct [:name, :born_on]
+  end
+
+  defmodule Post do
+    defstruct [:title, :author, :comments, :published_on]
+  end
+
   # A value_fn that just returns the value unchanged, so these tests isolate
   # Mappable's own traversal/strip_blank behavior from field-level casting
   # (covered separately by Dowser.Elasticsearch.CodecTest).
@@ -47,6 +55,56 @@ defmodule Dowser.Elasticsearch.MappableTest do
       value = %{"tags" => ["a", ""], "meta" => %{"note" => ""}}
 
       assert Mappable.encode(value, nil, &identity/2, true) == %{"tags" => ["a"]}
+    end
+  end
+
+  describe "encode/4 — structs" do
+    @mapping %{
+      "properties" => %{
+        "title" => %{"type" => "text"},
+        "published_on" => %{"type" => "date"},
+        "author" => %{
+          "properties" => %{"name" => %{"type" => "text"}, "born_on" => %{"type" => "date"}}
+        },
+        "comments" => %{
+          "type" => "nested",
+          "properties" => %{"author" => %{"properties" => %{"name" => %{"type" => "text"}}}}
+        }
+      }
+    }
+
+    defp dump_dates(%Date{} = value, %{"type" => "date"}), do: Date.to_iso8601(value)
+    defp dump_dates(value, _mapping), do: value
+
+    test "a struct mapped as an object is dumped as a map, down to its nested structs" do
+      post = %Post{
+        title: "Hello",
+        published_on: ~D[2026-10-05],
+        author: %Author{name: "Ada", born_on: ~D[1815-12-10]},
+        comments: [%{"author" => %Author{name: "Bob"}}]
+      }
+
+      assert Mappable.encode(post, @mapping, &dump_dates/2, false) == %{
+               title: "Hello",
+               published_on: "2026-10-05",
+               author: %{name: "Ada", born_on: "1815-12-10"},
+               comments: [%{"author" => %{name: "Bob", born_on: nil}}]
+             }
+    end
+
+    test "a struct mapped as an object strips its blank fields when asked" do
+      assert Mappable.encode(%Author{name: "Ada"}, @mapping, &dump_dates/2, true) ==
+               %{name: "Ada"}
+    end
+
+    test "a struct under a leaf field is left to value_fn" do
+      assert Mappable.encode(~D[2026-10-05], %{"type" => "date"}, &dump_dates/2, false) ==
+               "2026-10-05"
+    end
+
+    test "a struct with no mapping is left to value_fn" do
+      assert Mappable.encode(%Author{name: "Ada"}, nil, &identity/2, false) ==
+               %Author{name: "Ada"}
     end
   end
 

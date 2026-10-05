@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.2] - 2026-10-05
+
+### Fixed
+
+- **A struct sent as a document is now cast against the mapping.** It used to
+  reach the field codec whole, so its fields were never dumped (a `Date` stayed
+  a `Date`) and the JSON encoder choked on a struct deriving no encoder. A
+  struct whose mapping entry is an object — the index root, an `object` or a
+  `nested` field — is now turned into a map with `Map.from_struct/1` and walked
+  like one, nested structs included. A struct under a leaf field (`Date` under
+  `date`, `Date.Range` under `date_range`...) still goes to its codec.
+
 ## [0.4.1] - 2026-09-25
 
 ### Fixed
