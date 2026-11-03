@@ -4,7 +4,7 @@ defmodule Dowser.Elasticsearch.Helpers do
   alias Dowser.Client.Response
   alias Dowser.Elasticsearch.Error
   alias Dowser.Elasticsearch.Index
-  alias Dowser.Elasticsearch.MappingError
+  alias Dowser.MappingError
 
   ## Typespecs
 

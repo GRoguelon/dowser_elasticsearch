@@ -3,11 +3,11 @@ defmodule Dowser.Elasticsearch.CodecTest do
 
   alias Dowser.Elasticsearch.Codec
   alias Dowser.Elasticsearch.HTTPStub
-  alias Dowser.Elasticsearch.MappingError
+  alias Dowser.MappingError
 
   @mapping %{
     "properties" => %{
-      "published_at" => %{"type" => "date", "format" => "strict_date_optional_time"},
+      "published_at" => %{"type" => "date", "format" => "strict_date_time_no_millis"},
       "ip" => %{"type" => "ip"}
     }
   }
@@ -18,231 +18,6 @@ defmodule Dowser.Elasticsearch.CodecTest do
 
   defp decode_opts(extra \\ []),
     do: context_opts(Keyword.put_new(extra, :key_fn, &Function.identity/1))
-
-  doctest Dowser.Elasticsearch.Codec
-
-  describe "load/2" do
-    test "casts date strings and epoch millis to DateTime" do
-      assert Codec.load("2026-08-11T00:00:00.000Z", %{
-               "type" => "date",
-               "format" => "strict_date_optional_time"
-             }) == ~U[2026-08-11 00:00:00.000Z]
-
-      assert Codec.load(0, %{"type" => "date", "format" => "epoch_millis"}) ==
-               ~U[1970-01-01 00:00:00.000Z]
-
-      assert Codec.load("2026-08-11T00:00:00.000Z", %{
-               "type" => "date_nanos",
-               "format" => "strict_date_optional_time"
-             }) == ~U[2026-08-11 00:00:00.000Z]
-    end
-
-    test "strict_date_optional_time casts every part it makes optional" do
-      field = %{"type" => "date"}
-
-      # The default format, with the fraction Elasticsearch treats as optional
-      # actually optional — and the offset, and the time itself.
-      assert Codec.load("2026-09-20T17:39:09.644Z", field) == ~U[2026-09-20 17:39:09.644Z]
-      assert Codec.load("2026-09-20T17:39:09Z", field) == ~U[2026-09-20 17:39:09Z]
-
-      assert Codec.load("2026-09-20T17:39:09.123456789Z", field) ==
-               ~U[2026-09-20 17:39:09.123456Z]
-
-      assert Codec.load("2026-09-20", field) == ~D[2026-09-20]
-
-      # An offset is normalized to UTC; no offset at all is read as UTC.
-      assert Codec.load("2026-09-20T12:39:09-05:00", field) == ~U[2026-09-20 17:39:09Z]
-      assert Codec.load("2026-09-20T17:39:09", field) == ~U[2026-09-20 17:39:09Z]
-    end
-
-    test "a declared format is read leniently, whatever precision the value has" do
-      # Elasticsearch writes to the declared precision but the index can hold
-      # values that predate the mapping, and elasticsearch_ex read these too.
-      strict = %{"type" => "date", "format" => "strict_date_time"}
-
-      assert Codec.load("2026-09-20T20:46:03Z", strict) == ~U[2026-09-20 20:46:03Z]
-      assert Codec.load("2026-09-20T20:46:03.899Z", strict) == ~U[2026-09-20 20:46:03.899Z]
-      assert Codec.load("2026-09-20T15:46:03-05:00", strict) == ~U[2026-09-20 20:46:03Z]
-
-      no_millis = %{"type" => "date", "format" => "strict_date_time_no_millis"}
-
-      assert Codec.load("2026-09-20T20:46:03.899Z", no_millis) == ~U[2026-09-20 20:46:03.899Z]
-
-      # A date-only format still only reads a date.
-      assert Codec.load("2026-09-20T20:46:03Z", %{"type" => "date", "format" => "strict_date"}) ==
-               "2026-09-20T20:46:03Z"
-    end
-
-    test "dumping keeps the precision the format declares" do
-      date_time = ~U[2026-09-20 20:46:03.899123Z]
-
-      assert Codec.dump(date_time, %{"type" => "date", "format" => "strict_date_time"}) ==
-               "2026-09-20T20:46:03.899Z"
-
-      assert Codec.dump(date_time, %{"type" => "date", "format" => "strict_date_time_no_millis"}) ==
-               "2026-09-20T20:46:03Z"
-    end
-
-    test "an unparseable date still passes through untouched" do
-      assert Codec.load("not a date", %{"type" => "date"}) == "not a date"
-      assert Codec.load("2026-13-45T99:99:99Z", %{"type" => "date"}) == "2026-13-45T99:99:99Z"
-    end
-
-    test "casts ip strings to :inet tuples" do
-      assert Codec.load("127.0.0.1", %{"type" => "ip"}) == {127, 0, 0, 1}
-    end
-
-    test "casts binary fields from Base64" do
-      assert Codec.load(Base.encode64("raw"), %{"type" => "binary"}) == "raw"
-    end
-
-    test "casts geo_point objects to {lat, lon} tuples" do
-      assert Codec.load(%{"lat" => 1.2, "lon" => 3.4}, %{"type" => "geo_point"}) ==
-               {1.2, 3.4}
-    end
-
-    test "casts date_range objects to Date.Range structs" do
-      assert Codec.load(%{"gte" => "2026-08-01", "lte" => "2026-08-11"}, %{
-               "type" => "date_range",
-               "format" => "strict_date"
-             }) == Date.range(~D[2026-08-01], ~D[2026-08-11])
-    end
-
-    test "casts integer_range objects to Range structs" do
-      assert Codec.load(%{"gte" => 1, "lte" => 10}, %{"type" => "integer_range"}) == 1..10
-    end
-
-    test "an integer_range with non-integer bounds passes through unchanged" do
-      assert Codec.load(%{"gte" => 1.5, "lte" => 2.5}, %{"type" => "integer_range"}) ==
-               %{"gte" => 1.5, "lte" => 2.5}
-    end
-
-    test "an unrecognized value passes through unchanged" do
-      assert Codec.load("not a date", %{"type" => "date"}) == "not a date"
-    end
-
-    test "a mapping with no format defaults to Elasticsearch's own default (strict_date_optional_time||epoch_millis)" do
-      assert Codec.load("2026-08-11", %{"type" => "date"}) == ~D[2026-08-11]
-
-      assert Codec.load("2026-08-11T00:00:00.000Z", %{"type" => "date"}) ==
-               ~U[2026-08-11 00:00:00.000Z]
-
-      assert Codec.load(0, %{"type" => "date"}) == ~U[1970-01-01 00:00:00.000Z]
-    end
-
-    test "an unmatched type falls back to identity" do
-      assert Codec.load("hello", %{"type" => "text"}) == "hello"
-    end
-
-    test "nil short-circuits" do
-      assert Codec.load(nil, %{"type" => "date"}) == nil
-    end
-  end
-
-  describe "dump/2" do
-    test "dumps DateTime to ISO-8601" do
-      assert Codec.dump(~U[2026-08-11 00:00:00Z], %{
-               "type" => "date",
-               "format" => "strict_date_optional_time"
-             }) == "2026-08-11T00:00:00Z"
-    end
-
-    test "a mapping with no format defaults to Elasticsearch's own default (strict_date_optional_time||epoch_millis)" do
-      assert Codec.dump(~D[2026-08-11], %{"type" => "date"}) == "2026-08-11"
-
-      assert Codec.dump(~U[2026-08-11 00:00:00Z], %{"type" => "date"}) ==
-               "2026-08-11T00:00:00Z"
-    end
-
-    test "dumps :inet tuples to strings" do
-      assert Codec.dump({127, 0, 0, 1}, %{"type" => "ip"}) == "127.0.0.1"
-    end
-
-    test "dumps raw binaries to Base64" do
-      assert Codec.dump("raw", %{"type" => "binary"}) == Base.encode64("raw")
-    end
-
-    test "dumps {lat, lon} tuples to geo_point objects" do
-      assert Codec.dump({1.2, 3.4}, %{"type" => "geo_point"}) ==
-               %{"lat" => 1.2, "lon" => 3.4}
-    end
-
-    test "dumps Date.Range structs to date_range objects" do
-      assert Codec.dump(Date.range(~D[2026-08-01], ~D[2026-08-11]), %{
-               "type" => "date_range",
-               "format" => "strict_date"
-             }) == %{"gte" => "2026-08-01", "lte" => "2026-08-11"}
-    end
-
-    test "dumps Range structs to integer_range objects" do
-      assert Codec.dump(1..10, %{"type" => "integer_range"}) == %{"gte" => 1, "lte" => 10}
-    end
-
-    test "a non-Range value for integer_range passes through unchanged" do
-      assert Codec.dump("not a range", %{"type" => "integer_range"}) == "not a range"
-    end
-
-    test "an unmatched type falls back to identity" do
-      assert Codec.dump("hello", %{"type" => "text"}) == "hello"
-    end
-
-    test "nil short-circuits" do
-      assert Codec.dump(nil, %{"type" => "date"}) == nil
-    end
-  end
-
-  describe "a codec of your own" do
-    defmodule CustomCodec do
-      @behaviour Dowser.Elasticsearch.Codec
-
-      @impl true
-      def load(value, %{"type" => "scaled_float", "scaling_factor" => factor})
-          when is_integer(value) do
-        value / factor
-      end
-
-      # `date` is already handled by the built-in codec; matching it first
-      # replaces that cast.
-      def load(value, %{"type" => "date"}), do: {:raw, value}
-
-      def load(value, field), do: Dowser.Elasticsearch.Codec.load(value, field)
-
-      @impl true
-      def dump(value, %{"type" => "scaled_float", "scaling_factor" => factor})
-          when is_float(value) do
-        round(value * factor)
-      end
-
-      def dump(value, field), do: Dowser.Elasticsearch.Codec.dump(value, field)
-    end
-
-    test "a delegated type still uses the built-in codec" do
-      assert CustomCodec.load("127.0.0.1", %{"type" => "ip"}) == {127, 0, 0, 1}
-    end
-
-    test "an added type is cast by the new clause" do
-      field = %{"type" => "scaled_float", "scaling_factor" => 100}
-
-      assert CustomCodec.load(1234, field) == 12.34
-      assert CustomCodec.dump(12.34, field) == 1234
-    end
-
-    test "a clause over a built-in type replaces that cast" do
-      assert CustomCodec.load("2026-08-11", %{"type" => "date"}) == {:raw, "2026-08-11"}
-    end
-
-    test "delegating inherits the nil short-circuit and the identity fallback" do
-      assert CustomCodec.load(nil, %{"type" => "ip"}) == nil
-      assert CustomCodec.load("hello", %{"type" => "text"}) == "hello"
-    end
-  end
-
-  describe "a mapping entry with no type" do
-    test "falls back to identity in both directions" do
-      assert Codec.load("hello", nil) == "hello"
-      assert Codec.dump("hello", %{"properties" => %{}}) == "hello"
-    end
-  end
 
   describe "decode/2 — document found at any depth" do
     test "a bare document (Document.get/3 shape) is cast" do
@@ -386,7 +161,7 @@ defmodule Dowser.Elasticsearch.CodecTest do
 
     @nested_mapping %{
       "properties" => %{
-        "published_at" => %{"type" => "date", "format" => "strict_date_optional_time"},
+        "published_at" => %{"type" => "date", "format" => "strict_date_time_no_millis"},
         "alerts" => %{
           "type" => "nested",
           "properties" => %{
@@ -781,14 +556,14 @@ defmodule Dowser.Elasticsearch.CodecTest do
 
   describe "decode/2 — opts[:codec]" do
     defmodule UpcaseCodec do
-      @behaviour Dowser.Elasticsearch.Codec
+      @behaviour Dowser.Type
 
       @impl true
       def load(value, %{"type" => "text"}) when is_binary(value), do: String.upcase(value)
-      def load(value, field), do: Dowser.Elasticsearch.Codec.load(value, field)
+      def load(value, field), do: Dowser.Type.load(value, field)
 
       @impl true
-      def dump(value, field), do: Dowser.Elasticsearch.Codec.dump(value, field)
+      def dump(value, field), do: Dowser.Type.dump(value, field)
     end
 
     test "values are cast through the given codec instead of the default" do
@@ -828,14 +603,14 @@ defmodule Dowser.Elasticsearch.CodecTest do
     end
 
     defmodule DowncaseCodec do
-      @behaviour Dowser.Elasticsearch.Codec
+      @behaviour Dowser.Type
 
       @impl true
-      def load(value, field), do: Dowser.Elasticsearch.Codec.load(value, field)
+      def load(value, field), do: Dowser.Type.load(value, field)
 
       @impl true
       def dump(value, %{"type" => "text"}) when is_binary(value), do: String.downcase(value)
-      def dump(value, field), do: Dowser.Elasticsearch.Codec.dump(value, field)
+      def dump(value, field), do: Dowser.Type.dump(value, field)
     end
 
     test "opts[:codec] replaces the default codec" do
@@ -854,7 +629,7 @@ defmodule Dowser.Elasticsearch.CodecTest do
     test "a flattened source passes through untouched" do
       HTTPStub.start_mapping_cacher!(%{
         "properties" => %{
-          "published_at" => %{"type" => "date", "format" => "strict_date_optional_time"},
+          "published_at" => %{"type" => "date", "format" => "strict_date_time_no_millis"},
           "roster" => %{"type" => "flattened"}
         }
       })

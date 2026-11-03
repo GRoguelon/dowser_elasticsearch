@@ -412,7 +412,7 @@ defmodule Dowser.Elasticsearch.StreamerTest do
     } do
       HTTPStub.start_mapping_cacher!(%{
         "properties" => %{
-          "published_at" => %{"type" => "date", "format" => "strict_date_optional_time"}
+          "published_at" => %{"type" => "date", "format" => "strict_date_time"}
         }
       })
 

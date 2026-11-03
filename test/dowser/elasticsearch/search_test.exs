@@ -428,7 +428,7 @@ defmodule Dowser.Elasticsearch.SearchTest do
     test "each hit's _source is cast against its own index mapping, at any nesting depth" do
       mapping = %{
         "properties" => %{
-          "published_at" => %{"type" => "date", "format" => "strict_date_optional_time"}
+          "published_at" => %{"type" => "date", "format" => "strict_date_time"}
         }
       }
 

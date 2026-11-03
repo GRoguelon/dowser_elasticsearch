@@ -6,25 +6,25 @@ defmodule Dowser.Elasticsearch.DocumentTest do
   alias Dowser.Elasticsearch.HTTPStub
 
   defmodule UpcaseCodec do
-    @behaviour Dowser.Elasticsearch.Codec
+    @behaviour Dowser.Type
 
     @impl true
     def load(value, %{"type" => "text"}) when is_binary(value), do: String.upcase(value)
-    def load(value, field), do: Dowser.Elasticsearch.Codec.load(value, field)
+    def load(value, field), do: Dowser.Type.load(value, field)
 
     @impl true
-    def dump(value, field), do: Dowser.Elasticsearch.Codec.dump(value, field)
+    def dump(value, field), do: Dowser.Type.dump(value, field)
   end
 
   defmodule ExclaimCodec do
-    @behaviour Dowser.Elasticsearch.Codec
+    @behaviour Dowser.Type
 
     @impl true
     def load(value, %{"type" => "text"}) when is_binary(value), do: value <> "!"
-    def load(value, field), do: Dowser.Elasticsearch.Codec.load(value, field)
+    def load(value, field), do: Dowser.Type.load(value, field)
 
     @impl true
-    def dump(value, field), do: Dowser.Elasticsearch.Codec.dump(value, field)
+    def dump(value, field), do: Dowser.Type.dump(value, field)
   end
 
   defp context(port), do: HTTPStub.context(port)
@@ -167,7 +167,7 @@ defmodule Dowser.Elasticsearch.DocumentTest do
   describe "type casting via Codec" do
     @mapping %{
       "properties" => %{
-        "published_at" => %{"type" => "date", "format" => "strict_date_optional_time"}
+        "published_at" => %{"type" => "date", "format" => "strict_date_time_no_millis"}
       }
     }
 

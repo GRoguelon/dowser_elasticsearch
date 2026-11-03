@@ -5,6 +5,32 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+The casting moved to `dowser_client` 0.4, where `dowser_opensearch` shares
+it. `Dowser.Elasticsearch.Codec` and
+`Dowser.Elasticsearch.MappingCacher` stay, as Elasticsearch's configuration of
+it; the rest is `dowser_client`'s.
+
+### Changed
+
+- **Breaking:** requires `dowser_client` `~> 0.4.0`.
+- **Breaking:** the field codecs are `dowser_client`'s field types:
+  `Dowser.Elasticsearch.Codec.Date` is `Dowser.Type.Date`, and so on for `Binary`,
+  `DateRange`, `GeoPoint`, `IP` and `Range`. A codec of your own implements
+  `@behaviour Dowser.Type` and delegates to `Dowser.Type.load/2` and
+  `Dowser.Type.dump/2`; `Dowser.Elasticsearch.Codec` no longer has `load/2`,
+  `dump/2` or a behaviour. It is still named by the `:codec` option, at every tier.
+- **Breaking:** `Dowser.Elasticsearch.MappingError` is `Dowser.MappingError`.
+- **The mapping decides what a value is, never its shape** — see
+  `dowser_client`'s changelog. A `geo_point` stored as an object now loads to
+  `{lat, lon}`, and an uncast leaf map (a `geo_shape`, an `integer_range`
+  with float bounds) has its keys go through `:keys`.
+- **Breaking:** only nine date formats are cast (`strict_date_time`,
+  `strict_date`, `epoch_millis`, …; see `Dowser.Type.Date`). A date field with
+  no format, or `strict_date_optional_time`, now comes back as stored.
+- Only `flattened` is opaque: Elasticsearch's own name for the type.
+
 ## [0.4.2] - 2026-10-05
 
 ### Fixed

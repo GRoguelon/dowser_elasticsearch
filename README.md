@@ -286,6 +286,7 @@ config :dowser_client,
 ```
 
 ```elixir
+# with "published_at" mapped {"type": "date", "format": "strict_date_time_no_millis"}
 Document.get!("posts", "1")
 # %{"_source" => %{"published_at" => ~U[2026-08-11 00:00:00Z]}, ...}
 
@@ -301,35 +302,96 @@ is never cast, since a query value has no mapping entry to anchor it: build
 queries in the shape Elasticsearch expects.
 
 Mappings are fetched once and cached by `Dowser.Elasticsearch.MappingCacher`,
-which the application supervises automatically. `date`, `date_range`, `ip`,
-`binary`, `geo_point` and `integer_range` fields are cast out of the box.
+which the application supervises automatically. A `flattened` field, and an
+object mapped `"enabled": false`, are returned exactly as stored.
 
-Individual values go through the same module's `load/2` and `dump/2`. Covering
-one more mapping type is a clause per direction and a delegation back to it for
-the rest:
+### What is cast
+
+The casting is `dowser_client`'s (`Dowser.Type`), the same on Elasticsearch and
+OpenSearch. Only the types JSON can't represent are cast; every other value
+passes through as decoded JSON:
+
+| mapping type                  | stored                                     | Elixir                                      |
+| ----------------------------- | ------------------------------------------ | ------------------------------------------- |
+| `date`, `date_nanos`          | depends on the format — see below          | `Date`, `Time`, `DateTime`, `NaiveDateTime` |
+| `date_range` (`strict_date`)  | `{"gte": "2019-03-01", "lte": "2019-03-31"}` | `Date.Range`                                |
+| `integer_range`, `long_range` | `{"gte": 1, "lte": 10}`                    | `Range`                                     |
+| `ip`                          | `"127.0.0.1"`                              | `{127, 0, 0, 1}`                            |
+| `binary`                      | Base64                                     | raw binary                                  |
+| `geo_point`                   | `{"lat": 1.2, "lon": 3.4}`                 | `{1.2, 3.4}`                                |
+
+#### Dates
+
+A date field's `format` decides what it is cast to. Nine formats are, each
+read by the Elixir function that parses it:
+
+| format                                  | stored                            | Elixir                                    |
+| --------------------------------------- | --------------------------------- | ----------------------------------------- |
+| `epoch_millis`                          | `1553391286000`                   | `DateTime.from_unix(value, :millisecond)` |
+| `epoch_second`                          | `1553391286`                      | `DateTime.from_unix(value, :second)`      |
+| `strict_date`                           | `"2019-03-23"`                    | `Date.from_iso8601/1`                     |
+| `strict_date_hour_minute_second`        | `"2019-03-23T21:34:46"`           | `NaiveDateTime.from_iso8601/1`            |
+| `strict_date_hour_minute_second_millis` | `"2019-03-23T21:34:46.123"`       | `NaiveDateTime.from_iso8601/1`            |
+| `strict_date_time_no_millis`            | `"2019-03-23T21:34:46-04:00"`     | `DateTime.from_iso8601/1`                 |
+| `strict_date_time`                      | `"2019-03-23T21:34:46.123-04:00"` | `DateTime.from_iso8601/1`                 |
+| `strict_hour_minute_second`             | `"21:34:46"`                      | `Time.from_iso8601/1`                     |
+| `strict_hour_minute_second_millis`      | `"21:34:46.123"`                  | `Time.from_iso8601/1`                     |
+
+- **Any other format is not cast** — nor is a field with no format at all,
+  which Elasticsearch reads as `strict_date_optional_time||epoch_millis`. Its
+  values come back as stored, and are written as given. Map a date field with
+  one of the nine to have it cast. A value its format can't read (a leap
+  second, a malformed string) comes back as stored too.
+- **Several formats** (`"strict_date||epoch_millis"`): a value is read with
+  the first that recognizes it, and written with the first.
+- **Precision:** a value is read at whatever precision it carries, and written
+  at exactly the format's — truncated to the second or the millisecond, and
+  padded to three digits for a `_millis` format
+  (`~U[2019-03-24 01:34:46Z]` is written `"2019-03-24T01:34:46.000Z"` to
+  `strict_date_time`).
+- **Always UTC:** an offset in a stored value is applied and dropped, giving
+  one UTC `DateTime`; a value with no offset, or `-00:00`, is read as UTC, as
+  Elasticsearch reads it. A `DateTime` in any zone is written as its UTC instant
+  (`Z`). No time-zone database is needed, and `tzdata` changes nothing. The
+  instant is exact, but the original offset isn't kept: store the zone in a
+  field of its own where the local time matters.
+
+#### Ranges
+
+A range is cast only when the Elixir struct holds it exactly: a `date_range`
+mapped `strict_date` with `gte`/`lte` dates, an `integer_range` or
+`long_range` with integer `gte`/`lte` bounds, `gte` no greater than `lte`.
+Anything else — an open-ended range, `gt`/`lt` bounds, another date format —
+comes back as stored. Only a range stepping by 1 is written back as a range.
+
+### Casting a type of your own
+
+Individual values go through a `Dowser.Type` module — `Dowser.Type` itself by
+default. Covering one more mapping type is a clause per direction and a
+delegation back to it for the rest:
 
 ```elixir
-defmodule MyApp.Codec do
-  @behaviour Dowser.Elasticsearch.Codec
+defmodule MyApp.Type do
+  @behaviour Dowser.Type
 
   @impl true
   def load(value, %{"type" => "scaled_float", "scaling_factor" => factor}) do
     value / factor
   end
 
-  def load(value, field), do: Dowser.Elasticsearch.Codec.load(value, field)
+  def load(value, field), do: Dowser.Type.load(value, field)
 
   @impl true
   def dump(value, %{"type" => "scaled_float", "scaling_factor" => factor}) do
     round(value * factor)
   end
 
-  def dump(value, field), do: Dowser.Elasticsearch.Codec.dump(value, field)
+  def dump(value, field), do: Dowser.Type.dump(value, field)
 end
 ```
 
 Delegating last inherits the built-in casts, the `nil` short-circuit and the
-fall-through to identity; a clause matching a type the built-in codec already
+fall-through to identity; a clause matching a type `Dowser.Type` already
 handles replaces that cast.
 
 Point the casting at it globally, per context, or per request — most specific
@@ -337,13 +399,13 @@ wins:
 
 ```elixir
 # globally
-config :dowser_elasticsearch, codec: MyApp.Codec
+config :dowser_elasticsearch, codec: MyApp.Type
 
 # per context, alongside the pass it belongs to
-decoder: {Dowser.Elasticsearch.Codec, codec: MyApp.Codec}
+decoder: {Dowser.Elasticsearch.Codec, codec: MyApp.Type}
 
 # per request, on any API function
-Document.get("posts", "1", codec: MyApp.Codec)
+Document.get("posts", "1", codec: MyApp.Type)
 ```
 
 ## Compatibility

@@ -88,13 +88,7 @@ defmodule DowserElasticsearch.MixProject do
         ],
         "Type casting": [
           Dowser.Elasticsearch.Codec,
-          Dowser.Elasticsearch.MappingCacher,
-          Dowser.Elasticsearch.Codec.Binary,
-          Dowser.Elasticsearch.Codec.Date,
-          Dowser.Elasticsearch.Codec.DateRange,
-          Dowser.Elasticsearch.Codec.GeoPoint,
-          Dowser.Elasticsearch.Codec.IP,
-          Dowser.Elasticsearch.Codec.Range
+          Dowser.Elasticsearch.MappingCacher
         ]
       ]
     ]
@@ -119,7 +113,7 @@ defmodule DowserElasticsearch.MixProject do
     if path = System.get_env("DOWSER_CLIENT_PATH") do
       {:dowser_client, path: path, override: true}
     else
-      {:dowser_client, "~> 0.3.0"}
+      {:dowser_client, "~> 0.4.0"}
     end
   end
 end
