@@ -21,7 +21,7 @@ defmodule Dowser.Elasticsearch.Search do
       request uses `POST` whenever a body is present and `GET` otherwise.
 
   All remaining options are forwarded to `Dowser.Client.request/4`, e.g.
-  `:context`, `:params` (query-string parameters), `:format`, `:keys` and
+  `:repo`, `:params` (query-string parameters), `:format`, `:keys` and
   `:http_opts` (including `:headers`) — plus `:codec`, this package's own,
   which picks the per-field codec for this one request (see
   `Dowser.Elasticsearch.Codec`).

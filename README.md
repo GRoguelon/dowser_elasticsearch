@@ -51,19 +51,34 @@ casting functions themselves are unchanged — see
 
 ## Configuration
 
-Point the client at your cluster via `dowser_client`'s `:contexts` config —
-see [its README](https://hexdocs.pm/dowser_client) for the full set of
-options (auth, headers, TLS, `:httpc` profiles):
+Define a repo — one module per cluster, configured under your own application
+and started in your supervision tree, like an `Ecto.Repo`:
 
 ```elixir
-config :dowser_client,
-  contexts: [
-    default: [endpoint: "http://localhost:9200", auth: {:basic, "user", "changeme"}]
-  ]
+defmodule MyApp.Search do
+  use Dowser.Elasticsearch.Repo, otp_app: :my_app
+end
 ```
 
-Every API function accepts a `:context` option to target a specific entry
-(or an ad-hoc inline context) instead of `:default`.
+```elixir
+# config/runtime.exs
+config :my_app, MyApp.Search, endpoint: System.get_env("ELASTICSEARCH_URL", "http://localhost:9200")
+
+# the repo used when a call names none
+config :dowser_elasticsearch, default_repo: MyApp.Search
+```
+
+```elixir
+# application.ex
+children = [MyApp.Search]
+```
+
+Every API function takes the cluster as its `:repo` option — a repo module, or
+`[endpoint: ...]` for a script — and falls back to `:default_repo` without one.
+See `Dowser.Elasticsearch.Repo` and `Dowser.Repo` for the configuration (auth,
+headers, TLS, `:httpc` profiles, an `init/2` callback for secrets), checking at
+startup that the endpoint really is Elasticsearch (`verify: true`), and the HTTP
+verbs a repo exposes for endpoints this package doesn't cover.
 
 ## Usage
 
@@ -271,18 +286,14 @@ directly.
 
 By default, response bodies come back as plain decoded JSON — dates, IPs and
 other Elasticsearch types stay strings. Wiring `Dowser.Elasticsearch.Codec`
-into the context — as both passes — casts them automatically, per index
+into the repo — as both passes — casts them automatically, per index
 mapping, on every call to `Search` and `Document`:
 
 ```elixir
-config :dowser_client,
-  contexts: [
-    default: [
-      endpoint: "http://localhost:9200",
-      decoder: Dowser.Elasticsearch.Codec,
-      encoder: Dowser.Elasticsearch.Codec
-    ]
-  ]
+config :my_app, MyApp.Search,
+  endpoint: "http://localhost:9200",
+  decoder: Dowser.Elasticsearch.Codec,
+  encoder: Dowser.Elasticsearch.Codec
 ```
 
 ```elixir
@@ -394,14 +405,14 @@ Delegating last inherits the built-in casts, the `nil` short-circuit and the
 fall-through to identity; a clause matching a type `Dowser.Type` already
 handles replaces that cast.
 
-Point the casting at it globally, per context, or per request — most specific
+Point the casting at it globally, per repo, or per request — most specific
 wins:
 
 ```elixir
 # globally
 config :dowser_elasticsearch, codec: MyApp.Type
 
-# per context, alongside the pass it belongs to
+# per repo, alongside the pass it belongs to
 decoder: {Dowser.Elasticsearch.Codec, codec: MyApp.Type}
 
 # per request, on any API function

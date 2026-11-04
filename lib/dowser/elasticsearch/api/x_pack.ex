@@ -8,7 +8,7 @@ defmodule Dowser.Elasticsearch.XPack do
   Built on `Dowser.Client`. Neither endpoint requires an attribute, so both
   signatures are `opts`-only.
 
-  All options are forwarded to `Dowser.Client.request/4`, e.g. `:context`,
+  All options are forwarded to `Dowser.Client.request/4`, e.g. `:repo`,
   `:params` (query-string parameters), `:format`, `:keys` and `:http_opts`
   (including `:headers`).
 

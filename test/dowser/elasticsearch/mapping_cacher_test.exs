@@ -186,7 +186,7 @@ defmodule Dowser.Elasticsearch.MappingCacherTest do
     test "caches a mapping directly, without fetching" do
       start_supervised!({MappingCacher, fetch: fn _context, _index -> {:error, :boom} end})
 
-      assert :ok = MappingCacher.put("posts", %{"properties" => %{}}, context: @context)
+      assert :ok = MappingCacher.put("posts", %{"properties" => %{}}, repo: @context)
       assert {:ok, %{"properties" => %{}}} = MappingCacher.lookup(@context, "posts")
     end
 

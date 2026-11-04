@@ -61,7 +61,7 @@ defmodule Dowser.Elasticsearch.ClusterTest do
       {opts, args} = List.pop_at(args, -1)
 
       assert {:ok, _body} =
-               apply(Cluster, unquote(fun), args ++ [opts ++ [context: context(port)]])
+               apply(Cluster, unquote(fun), args ++ [opts ++ [repo: context(port)]])
 
       req = Task.await(server)
       assert req.method == unquote(method)
@@ -74,7 +74,7 @@ defmodule Dowser.Elasticsearch.ClusterTest do
       {port, server} = start_server()
 
       assert {:ok, _} =
-               Cluster.health(params: [wait_for_status: "yellow"], context: context(port))
+               Cluster.health(params: [wait_for_status: "yellow"], repo: context(port))
 
       assert Task.await(server).path == "/_cluster/health?wait_for_status=yellow"
     end
@@ -82,7 +82,7 @@ defmodule Dowser.Elasticsearch.ClusterTest do
     test "wraps a non-2xx response in a Dowser.Elasticsearch.Error" do
       {port, server} = start_server(@server_error_response)
 
-      assert {:error, %Error{status: 500}} = Cluster.health(context: context(port))
+      assert {:error, %Error{status: 500}} = Cluster.health(repo: context(port))
 
       Task.await(server)
     end
@@ -91,7 +91,7 @@ defmodule Dowser.Elasticsearch.ClusterTest do
       {port, server} = start_server(@server_error_response)
 
       assert_raise Error, fn ->
-        Cluster.health!(context: context(port))
+        Cluster.health!(repo: context(port))
       end
 
       Task.await(server)
@@ -135,7 +135,7 @@ defmodule Dowser.Elasticsearch.ClusterTest do
 
       {port, server} = start_server(response)
 
-      assert {:ok, ^text} = Cluster.nodes_hot_threads(context: context(port))
+      assert {:ok, ^text} = Cluster.nodes_hot_threads(repo: context(port))
 
       req = Task.await(server)
       assert req.method == "GET"
@@ -151,7 +151,7 @@ defmodule Dowser.Elasticsearch.ClusterTest do
 
       {port, server} = start_server(response)
 
-      assert {:ok, _} = Cluster.nodes_hot_threads(node_id: "node-1", context: context(port))
+      assert {:ok, _} = Cluster.nodes_hot_threads(node_id: "node-1", repo: context(port))
       assert Task.await(server).path == "/_nodes/node-1/hot_threads"
     end
   end
@@ -160,7 +160,7 @@ defmodule Dowser.Elasticsearch.ClusterTest do
     test "returns true on a 2xx" do
       {port, server} = start_server(HTTPStub.head_response(200))
 
-      assert {:ok, true} = Cluster.ping(context: context(port))
+      assert {:ok, true} = Cluster.ping(repo: context(port))
 
       req = Task.await(server)
       assert req.method == "HEAD"
@@ -170,7 +170,7 @@ defmodule Dowser.Elasticsearch.ClusterTest do
     test "returns false on a 404" do
       {port, server} = start_server(HTTPStub.head_response(404))
 
-      assert {:ok, false} = Cluster.ping(context: context(port))
+      assert {:ok, false} = Cluster.ping(repo: context(port))
 
       Task.await(server)
     end
@@ -178,7 +178,7 @@ defmodule Dowser.Elasticsearch.ClusterTest do
     test "ping?/1 returns the bare boolean" do
       {port, server} = start_server(HTTPStub.head_response(200))
 
-      assert Cluster.ping?(context: context(port))
+      assert Cluster.ping?(repo: context(port))
 
       Task.await(server)
     end
@@ -191,7 +191,7 @@ defmodule Dowser.Elasticsearch.ClusterTest do
       assert {:ok, _} =
                Cluster.put_settings(
                  %{"persistent" => %{"indices.recovery.max_bytes_per_sec" => "50mb"}},
-                 context: context(port)
+                 repo: context(port)
                )
 
       req = Task.await(server)

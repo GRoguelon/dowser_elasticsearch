@@ -39,7 +39,7 @@ defmodule Dowser.Elasticsearch.Cat do
   Use `help/1` to ask an endpoint which columns it supports.
 
   All remaining options are forwarded to `Dowser.Client.request/4`, e.g.
-  `:context`, `:params` (query-string parameters), `:format`, `:keys` and
+  `:repo`, `:params` (query-string parameters), `:format`, `:keys` and
   `:http_opts` (including `:headers`).
 
   On a 2xx response every function returns `{:ok, body}` with the decoded

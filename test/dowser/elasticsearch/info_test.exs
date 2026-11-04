@@ -17,7 +17,7 @@ defmodule Dowser.Elasticsearch.InfoTest do
     test "GETs / and decodes the response" do
       {port, server} = start_server()
 
-      assert {:ok, body} = Info.info(context: context(port))
+      assert {:ok, body} = Info.info(repo: context(port))
       assert body["version"]["number"] == "8.13.4"
 
       req = Task.await(server)
@@ -28,14 +28,14 @@ defmodule Dowser.Elasticsearch.InfoTest do
     test "forwards url params" do
       {port, server} = start_server()
 
-      assert {:ok, _} = Info.info(params: [human: true], context: context(port))
+      assert {:ok, _} = Info.info(params: [human: true], repo: context(port))
       assert Task.await(server).path == "/?human=true"
     end
 
     test "wraps a non-2xx response in a Dowser.Elasticsearch.Error" do
       {port, server} = start_server(@server_error_response)
 
-      assert {:error, %Error{status: 500}} = Info.info(context: context(port))
+      assert {:error, %Error{status: 500}} = Info.info(repo: context(port))
 
       Task.await(server)
     end
@@ -45,7 +45,7 @@ defmodule Dowser.Elasticsearch.InfoTest do
     test "returns the body directly" do
       {port, server} = start_server()
 
-      assert %{"name" => "node-1"} = Info.info!(context: context(port))
+      assert %{"name" => "node-1"} = Info.info!(repo: context(port))
 
       Task.await(server)
     end
@@ -54,7 +54,7 @@ defmodule Dowser.Elasticsearch.InfoTest do
       {port, server} = start_server(@server_error_response)
 
       assert_raise Error, fn ->
-        Info.info!(context: context(port))
+        Info.info!(repo: context(port))
       end
 
       Task.await(server)

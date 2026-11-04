@@ -4,14 +4,10 @@ defmodule Dowser.Elasticsearch.Codec do
   terms, based on each document's own index mapping — a `Dowser.Client`
   `:decoder` *and* `:encoder`:
 
-      config :dowser_client,
-        contexts: [
-          default: [
-            endpoint: "http://localhost:9200",
-            decoder: Dowser.Elasticsearch.Codec,
-            encoder: Dowser.Elasticsearch.Codec
-          ]
-        ]
+      config :my_app, MyApp.Search,
+        endpoint: "http://localhost:9200",
+        decoder: Dowser.Elasticsearch.Codec,
+        encoder: Dowser.Elasticsearch.Codec
 
   Once configured, every API function in `Dowser.Elasticsearch.Document` and
   `Dowser.Elasticsearch.Search` casts automatically — no per-call option needed.
@@ -62,7 +58,7 @@ defmodule Dowser.Elasticsearch.Codec do
 
            Dowser.Elasticsearch.Document.get("posts", "1", codec: MyApp.Type)
 
-    2. **Per context** — named alongside the pass it belongs to:
+    2. **Per repo** — named alongside the pass it belongs to:
 
            decoder: {Dowser.Elasticsearch.Codec, codec: MyApp.Type},
            encoder: {Dowser.Elasticsearch.Codec, codec: MyApp.Type}

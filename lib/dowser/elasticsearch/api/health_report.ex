@@ -15,7 +15,7 @@ defmodule Dowser.Elasticsearch.HealthReport do
   For the older, terser status — `GET /_cluster/health` — see the `cluster`
   APIs, and for it as one text row, `Dowser.Elasticsearch.Cat.health/1`.
 
-  All options are forwarded to `Dowser.Client.request/4`, e.g. `:context`,
+  All options are forwarded to `Dowser.Client.request/4`, e.g. `:repo`,
   `:params` (query-string parameters), `:format`, `:keys` and `:http_opts`
   (including `:headers`).
 

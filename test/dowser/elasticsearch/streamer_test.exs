@@ -64,7 +64,7 @@ defmodule Dowser.Elasticsearch.StreamerTest do
 
       hits =
         %{query: %{match_all: %{}}, size: 2}
-        |> Streamer.stream(index: "posts", context: @context)
+        |> Streamer.stream(index: "posts", repo: @context)
         |> Enum.to_list()
 
       assert Enum.map(hits, & &1["_id"]) == ["1", "2", "3"]
@@ -79,7 +79,7 @@ defmodule Dowser.Elasticsearch.StreamerTest do
       stub_pages(requests, %{nil => [[]]})
 
       %{query: %{}, sort: [%{"title" => "desc"}]}
-      |> Streamer.stream(index: "posts", context: @context)
+      |> Streamer.stream(index: "posts", repo: @context)
       |> Enum.to_list()
 
       assert [%{body: body}] = searches(requests)
@@ -91,7 +91,7 @@ defmodule Dowser.Elasticsearch.StreamerTest do
       stub_pages(requests, %{nil => [[]]})
 
       %{query: %{}, sort: %{"title" => "desc"}}
-      |> Streamer.stream(index: "posts", context: @context)
+      |> Streamer.stream(index: "posts", repo: @context)
       |> Enum.to_list()
 
       assert [%{body: body}] = searches(requests)
@@ -102,7 +102,7 @@ defmodule Dowser.Elasticsearch.StreamerTest do
       stub_pages(requests, %{nil => [[]]})
 
       %{"query" => %{}, "sort" => [%{"title" => "desc"}], "size" => 5}
-      |> Streamer.stream(index: "posts", context: @context)
+      |> Streamer.stream(index: "posts", repo: @context)
       |> Enum.to_list()
 
       assert [%{body: body}] = searches(requests)
@@ -114,7 +114,7 @@ defmodule Dowser.Elasticsearch.StreamerTest do
       stub_pages(requests, %{nil => [[]]})
 
       %{query: %{}, sort: [%{_shard_doc: "asc"}]}
-      |> Streamer.stream(index: "posts", context: @context)
+      |> Streamer.stream(index: "posts", repo: @context)
       |> Enum.to_list()
 
       assert [%{body: body}] = searches(requests)
@@ -142,7 +142,7 @@ defmodule Dowser.Elasticsearch.StreamerTest do
       end)
 
       %{query: %{}, size: 1}
-      |> Streamer.stream(index: "posts", context: @context)
+      |> Streamer.stream(index: "posts", repo: @context)
       |> Enum.to_list()
 
       [first, second] = searches(requests)
@@ -160,7 +160,7 @@ defmodule Dowser.Elasticsearch.StreamerTest do
       stub_pages(requests, %{nil => [[]]})
 
       %{query: %{}}
-      |> Streamer.stream(index: "posts", keep_alive: "30s", context: @context)
+      |> Streamer.stream(index: "posts", keep_alive: "30s", repo: @context)
       |> Enum.to_list()
 
       urls = requests |> Agent.get(& &1) |> Enum.reverse() |> Enum.map(& &1.url)
@@ -172,7 +172,7 @@ defmodule Dowser.Elasticsearch.StreamerTest do
       stub_pages(requests, %{nil => [[hit(1), hit(2)], [hit(3), hit(4)]]})
 
       assert %{query: %{}, size: 2}
-             |> Streamer.stream(index: "posts", context: @context)
+             |> Streamer.stream(index: "posts", repo: @context)
              |> Enum.take(1)
              |> length() == 1
 
@@ -183,7 +183,7 @@ defmodule Dowser.Elasticsearch.StreamerTest do
       stub_pages(requests, %{nil => [[]]})
 
       %{query: %{}}
-      |> Streamer.stream(pit: "pit-given", context: @context)
+      |> Streamer.stream(pit: "pit-given", repo: @context)
       |> Enum.to_list()
 
       all = requests |> Agent.get(& &1) |> Enum.reverse()
@@ -199,7 +199,7 @@ defmodule Dowser.Elasticsearch.StreamerTest do
       end)
 
       assert_raise Dowser.Elasticsearch.Error, ~r/search_phase_execution_exception/, fn ->
-        %{query: %{}} |> Streamer.stream(pit: "dead", context: @context) |> Enum.to_list()
+        %{query: %{}} |> Streamer.stream(pit: "dead", repo: @context) |> Enum.to_list()
       end
     end
   end
@@ -209,7 +209,7 @@ defmodule Dowser.Elasticsearch.StreamerTest do
       stub_pages(requests, %{2 => [[]]})
 
       %{query: %{}, slice: %{"id" => 2, "max" => 8}}
-      |> Streamer.stream(index: "posts", context: @context)
+      |> Streamer.stream(index: "posts", repo: @context)
       |> Enum.to_list()
 
       assert [%{body: body}] = searches(requests)
@@ -219,7 +219,7 @@ defmodule Dowser.Elasticsearch.StreamerTest do
     test "no slice means no slice in the body", %{requests: requests} do
       stub_pages(requests, %{nil => [[]]})
 
-      %{query: %{}} |> Streamer.stream(index: "posts", context: @context) |> Enum.to_list()
+      %{query: %{}} |> Streamer.stream(index: "posts", repo: @context) |> Enum.to_list()
 
       assert [%{body: body}] = searches(requests)
       refute Map.has_key?(body, "slice")
@@ -235,7 +235,7 @@ defmodule Dowser.Elasticsearch.StreamerTest do
       stub_pages(requests, %{nil => [[]]})
 
       %{query: %{}}
-      |> Streamer.stream(pit: "pit-given", verify_pit: false, context: @context)
+      |> Streamer.stream(pit: "pit-given", verify_pit: false, repo: @context)
       |> Enum.to_list()
 
       assert [%{body: body}] = searches(requests)
@@ -284,7 +284,7 @@ defmodule Dowser.Elasticsearch.StreamerTest do
 
       results =
         %{query: %{}, size: 5}
-        |> Streamer.stream_slices(3, &Enum.count/1, index: "posts", context: context)
+        |> Streamer.stream_slices(3, &Enum.count/1, index: "posts", repo: context)
         |> Enum.to_list()
 
       assert Enum.sum(results) == 3
@@ -311,7 +311,7 @@ defmodule Dowser.Elasticsearch.StreamerTest do
             self()
           end,
           index: "posts",
-          context: context
+          repo: context
         )
         |> Enum.to_list()
 
@@ -324,7 +324,7 @@ defmodule Dowser.Elasticsearch.StreamerTest do
       context = pool(requests, %{0 => [[]], 1 => [[]]})
 
       %{query: %{}, slice: %{"field" => "_id"}}
-      |> Streamer.stream_slices(2, &Stream.run/1, index: "posts", context: context)
+      |> Streamer.stream_slices(2, &Stream.run/1, index: "posts", repo: context)
       |> Stream.run()
 
       assert searches(requests) |> Enum.map(& &1.body["slice"]) |> Enum.sort_by(& &1["id"]) == [
@@ -340,7 +340,7 @@ defmodule Dowser.Elasticsearch.StreamerTest do
         %{query: %{}, size: 1}
         |> Streamer.stream_slices(2, &Enum.map(&1, fn hit -> hit["_id"] end),
           index: "posts",
-          context: context
+          repo: context
         )
         |> Enum.concat()
         |> Enum.sort()
@@ -356,7 +356,7 @@ defmodule Dowser.Elasticsearch.StreamerTest do
       context = pool(requests, %{0 => [[]], 1 => [[]], 2 => [[]], 3 => [[]]})
 
       %{query: %{}}
-      |> Streamer.stream_slices(4, &Stream.run/1, index: "posts", context: context)
+      |> Streamer.stream_slices(4, &Stream.run/1, index: "posts", repo: context)
       |> Stream.run()
 
       all = requests |> Agent.get(& &1) |> Enum.reverse()
@@ -373,7 +373,7 @@ defmodule Dowser.Elasticsearch.StreamerTest do
       context = pool(requests, %{0 => [[]], 1 => [[]]})
 
       %{query: %{}}
-      |> Streamer.stream_slices(2, &Stream.run/1, index: "posts", context: context)
+      |> Streamer.stream_slices(2, &Stream.run/1, index: "posts", repo: context)
       |> Stream.run()
 
       refute Enum.any?(searches(requests), &match?(%{"query" => %{"match_none" => _}}, &1.body))
@@ -386,7 +386,7 @@ defmodule Dowser.Elasticsearch.StreamerTest do
         %{query: %{}}
         |> Streamer.stream_slices(2, fn _slice -> raise "boom" end,
           index: "posts",
-          context: context
+          repo: context
         )
         |> Stream.run()
       end
@@ -399,7 +399,7 @@ defmodule Dowser.Elasticsearch.StreamerTest do
 
       Streamer.stream_slices(%{query: %{}}, 1, &Stream.run/1,
         index: "posts",
-        context: context
+        repo: context
       )
 
       assert Agent.get(requests, & &1) == []
@@ -422,7 +422,7 @@ defmodule Dowser.Elasticsearch.StreamerTest do
 
       assert [decoded] =
                %{query: %{}, size: 10}
-               |> Streamer.stream(index: "posts", context: context, keys: :atoms)
+               |> Streamer.stream(index: "posts", repo: context, keys: :atoms)
                |> Enum.to_list()
 
       # `keys: :atoms` and the mapping both applied to the hit …
@@ -438,7 +438,7 @@ defmodule Dowser.Elasticsearch.StreamerTest do
 
       assert [decoded] =
                %{query: %{}, size: 10}
-               |> Streamer.stream(index: "posts", context: @context)
+               |> Streamer.stream(index: "posts", repo: @context)
                |> Enum.to_list()
 
       assert decoded["_source"]["published_at"] == "2026-08-11T00:00:00.000Z"
@@ -461,7 +461,7 @@ defmodule Dowser.Elasticsearch.StreamerTest do
       end)
 
       assert_raise Dowser.Elasticsearch.Error, ~r/circuit_breaking_exception/, fn ->
-        %{query: %{}} |> Streamer.stream(index: "posts", context: @context) |> Enum.to_list()
+        %{query: %{}} |> Streamer.stream(index: "posts", repo: @context) |> Enum.to_list()
       end
     end
   end

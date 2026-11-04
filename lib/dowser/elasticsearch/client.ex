@@ -5,12 +5,15 @@ defmodule Dowser.Elasticsearch.Client do
   #
   # Every API function goes through the verbs below rather than calling
   # `Dowser.Client` directly, so the options this package adds on top of the
-  # client's are handled in one place — `:codec` today. A request option only
-  # some endpoints honoured would be worse than none at all: the rest would
-  # ignore it silently.
+  # client's are handled in one place — the default repo and `:codec`. A request
+  # option only some endpoints honoured would be worse than none at all: the
+  # rest would ignore it silently.
+  #
+  # Requests go through `Dowser.Repo.request/5`, so a repo module sees every one
+  # of them — which is what lets a test swap it for a mock.
   #
   # The rest of the module resolves `:decoder`/`:encoder` the way
-  # `Dowser.Client.Request` does — request, then context, then the application
+  # `Dowser.Client.Request` does — request, then repo, then the application
   # environment — which the API functions need in order to hand the decoder and
   # the encoder what their endpoint's shape requires.
 
@@ -18,26 +21,42 @@ defmodule Dowser.Elasticsearch.Client do
 
   ## Public functions — the request funnel
 
-  @doc "Runs a `GET` through `Dowser.Client`; see `put_codec/1`."
+  @doc "Runs a `GET` against the repo; see `request/4`."
   @spec get(String.t(), keyword()) :: Dowser.Client.result()
-  def get(path, opts), do: Dowser.Client.get(path, put_codec(opts))
+  def get(path, opts), do: request(:get, path, nil, opts)
 
-  @doc "Runs a `POST` through `Dowser.Client`; see `put_codec/1`."
+  @doc "Runs a `POST` against the repo; see `request/4`."
   @spec post(String.t(), term(), keyword()) :: Dowser.Client.result()
-  def post(path, body, opts), do: Dowser.Client.post(path, body, put_codec(opts))
+  def post(path, body, opts), do: request(:post, path, body, opts)
 
-  @doc "Runs a `PUT` through `Dowser.Client`; see `put_codec/1`."
+  @doc "Runs a `PUT` against the repo; see `request/4`."
   @spec put(String.t(), term(), keyword()) :: Dowser.Client.result()
-  def put(path, body, opts), do: Dowser.Client.put(path, body, put_codec(opts))
+  def put(path, body, opts), do: request(:put, path, body, opts)
 
-  @doc "Runs a `DELETE` through `Dowser.Client`; see `put_codec/1`."
+  @doc "Runs a `DELETE` against the repo; see `request/4`."
   @spec delete(String.t(), term(), keyword()) :: Dowser.Client.result()
-  def delete(path, body, opts), do: Dowser.Client.delete(path, body, put_codec(opts))
+  def delete(path, body, opts), do: request(:delete, path, body, opts)
 
-  @doc "Runs a request through `Dowser.Client`; see `put_codec/1`."
+  @doc """
+  Runs a request against `repo/1`'s repo, through `Dowser.Repo.request/5`,
+  with `:codec` folded in (see `put_codec/1`).
+  """
   @spec request(Dowser.Client.method(), String.t(), term(), keyword()) :: Dowser.Client.result()
   def request(method, path, body, opts) do
-    Dowser.Client.request(method, path, body, put_codec(opts))
+    repo = repo(opts)
+    opts = opts |> put_codec() |> Keyword.delete(:repo)
+
+    Dowser.Repo.request(repo, method, path, body, opts)
+  end
+
+  @doc """
+  The repo a request goes to: its `:repo` option, else
+  `config :dowser_elasticsearch, default_repo: ...`, else `nil` — which
+  `Dowser.Client` reports as `:no_repo`.
+  """
+  @spec repo(keyword()) :: Dowser.Repo.t() | nil
+  def repo(opts) do
+    Keyword.get(opts, :repo) || Application.get_env(:dowser_elasticsearch, :default_repo)
   end
 
   ## Public functions — the casting options
@@ -70,7 +89,7 @@ defmodule Dowser.Elasticsearch.Client do
   Supplies the decoder — when one is configured at all — with what this
   endpoint's response shape needs (e.g. `:index`, `:source`).
 
-  A `:decoder` replaces the context's outright rather than merging with it, so
+  A `:decoder` replaces the repo's outright rather than merging with it, so
   the one in play is resolved first and handed back with `extra` filled in;
   keys the caller already set on it win. Without a decoder anywhere, `opts` is
   returned untouched and no casting happens.
@@ -110,10 +129,10 @@ defmodule Dowser.Elasticsearch.Client do
   The response second pass in play, as `{key_fun, decoder}` — both resolved the
   way `Dowser.Client.Request` resolves them, either being `nil` when unset.
 
-  `Dowser.Elasticsearch.Streamer` needs it in hand: its own requests have to
-  come back raw, because it reads `hits.hits[]`, each hit's `sort` and the
-  `pit_id` by their string keys, so it applies the pass itself to the hits it
-  yields. Feed the pair to `Dowser.Client.Decoder.run/3`.
+  `Dowser.Elasticsearch.Streamer` needs it in hand: its own requests have to come
+  back raw, because it reads `hits.hits[]`, each hit's `sort` and the `pit_id`
+  by their string keys, so it applies the pass itself to the hits it yields.
+  Feed the pair to `Dowser.Client.Decoder.run/3`.
   """
   @spec resolve_decoder(keyword()) ::
           {Dowser.Client.Decoder.key_fun() | nil, Dowser.Client.Decoder.resolved() | nil}
@@ -123,7 +142,7 @@ defmodule Dowser.Elasticsearch.Client do
     decoder =
       with decoder when not is_nil(decoder) <- fetch_option(opts, :decoder),
            {:ok, {fun, decoder_opts}} <- Dowser.Client.Decoder.decoder(decoder),
-           {:ok, context} <- Context.resolve(Keyword.get(opts, :context)) do
+           {:ok, context} <- Context.resolve(repo(opts)) do
         {fun, Keyword.put(decoder_opts, :context, context)}
       else
         _other -> nil
@@ -133,8 +152,8 @@ defmodule Dowser.Elasticsearch.Client do
   end
 
   @doc """
-  The encoder in play as `{function, opts}` — its own options plus the resolved
-  `:context` — or `nil` when none is configured.
+  The encoder in play as `{function, opts}` — its own options plus the repo,
+  resolved, as `:context` — or `nil` when none is configured.
 
   `Dowser.Client` normalizes and calls the encoder itself for every other
   endpoint; `Dowser.Elasticsearch.Document.bulk/2` needs it in hand, because a
@@ -145,7 +164,7 @@ defmodule Dowser.Elasticsearch.Client do
   def resolve_encoder(opts) do
     with encoder when not is_nil(encoder) <- fetch_option(opts, :encoder),
          {:ok, {fun, encoder_opts}} <- Dowser.Client.Encoder.encoder(encoder),
-         {:ok, context} <- Context.resolve(Keyword.get(opts, :context)) do
+         {:ok, context} <- Context.resolve(repo(opts)) do
       {fun, Keyword.put(encoder_opts, :context, context)}
     else
       _other ->
@@ -155,15 +174,15 @@ defmodule Dowser.Elasticsearch.Client do
 
   ## Private functions
 
-  # Same precedence `Dowser.Client.Request` applies: request, then context,
-  # then the application environment.
+  # Same precedence `Dowser.Client.Request` applies: request, then repo, then
+  # the application environment.
   defp fetch_option(opts, key) do
-    Keyword.get(opts, key) || context_option(opts, key) ||
+    Keyword.get(opts, key) || repo_option(opts, key) ||
       Application.get_env(:dowser_client, key)
   end
 
-  defp context_option(opts, key) do
-    case Context.resolve(Keyword.get(opts, :context)) do
+  defp repo_option(opts, key) do
+    case Context.resolve(repo(opts)) do
       {:ok, context} ->
         Map.fetch!(context, key)
 

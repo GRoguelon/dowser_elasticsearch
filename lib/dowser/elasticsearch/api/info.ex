@@ -6,7 +6,7 @@ defmodule Dowser.Elasticsearch.Info do
   Built on `Dowser.Client`. The endpoint takes no Elasticsearch attribute at
   all, so `info/1` only carries the transport options.
 
-  All options are forwarded to `Dowser.Client.request/4`, e.g. `:context`,
+  All options are forwarded to `Dowser.Client.request/4`, e.g. `:repo`,
   `:params` (query-string parameters), `:format`, `:keys` and `:http_opts`
   (including `:headers`) — plus `:codec`, this package's own, which picks the
   per-field codec for this one request (see `Dowser.Elasticsearch.Codec`).
@@ -43,7 +43,7 @@ defmodule Dowser.Elasticsearch.Info do
   ## Options
 
   Only the transport options listed in the module documentation, e.g.
-  `:context` to pick the cluster to query.
+  `:repo` to pick the cluster to query (the default repo without it).
   """
   @spec info(keyword()) :: result()
   def info(opts \\ []) do

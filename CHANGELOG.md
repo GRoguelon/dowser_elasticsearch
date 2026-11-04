@@ -7,30 +7,64 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-The casting moved to `dowser_client` 0.4, where `dowser_opensearch` shares
-it. `Dowser.Elasticsearch.Codec` and
+Breaking — see [UPGRADE_0_5.md](UPGRADE_0_5.md) for the path from 0.4.
+
+Two changes, both following `dowser_client` 0.4: a cluster is now a repo of your
+own instead of a context, and the casting moved to `dowser_client`, where
+`dowser_opensearch` shares it. `Dowser.Elasticsearch.Codec` and
 `Dowser.Elasticsearch.MappingCacher` stay, as Elasticsearch's configuration of
-it; the rest is `dowser_client`'s.
+it.
+
+### Added
+
+- **`Dowser.Elasticsearch.Repo`: one module per cluster.** `use
+  Dowser.Elasticsearch.Repo, otp_app: :my_app`, configured under your
+  application and started in your supervision tree, like an `Ecto.Repo`; see
+  `Dowser.Repo`. `config :dowser_elasticsearch, default_repo: MyApp.Search` is
+  the repo a call without `:repo` goes to. With `verify: true` the repo checks
+  at startup that its endpoint is Elasticsearch (`GET /`), and `engine/0`
+  returns the version it found. A repo also exposes the HTTP verbs, for
+  endpoints this package doesn't cover.
+- **`long_range` is cast to a `Range`**, like `integer_range`.
+- **`NaiveDateTime` and `Time` dates**, for fields formatted
+  `strict_date_hour_minute_second(_millis)` and
+  `strict_hour_minute_second(_millis)`.
 
 ### Changed
 
 - **Breaking:** requires `dowser_client` `~> 0.4.0`.
-- **Breaking:** the field codecs are `dowser_client`'s field types:
-  `Dowser.Elasticsearch.Codec.Date` is `Dowser.Type.Date`, and so on for `Binary`,
-  `DateRange`, `GeoPoint`, `IP` and `Range`. A codec of your own implements
-  `@behaviour Dowser.Type` and delegates to `Dowser.Type.load/2` and
-  `Dowser.Type.dump/2`; `Dowser.Elasticsearch.Codec` no longer has `load/2`,
-  `dump/2` or a behaviour. It is still named by the `:codec` option, at every tier.
-- **Breaking:** `Dowser.Elasticsearch.MappingError` is `Dowser.MappingError`.
-- **The mapping decides what a value is, never its shape** — see
-  `dowser_client`'s changelog. A `geo_point` stored as an object now loads to
-  `{lat, lon}`, and an uncast leaf map (a `geo_shape`, an `integer_range`
-  with float bounds) has its keys go through `:keys`.
-- **Breaking:** only nine date formats are cast (`strict_date_time`,
-  `strict_date`, `epoch_millis`, …; see `Dowser.Type.Date`). A date field with
-  no format, or `strict_date_optional_time`, now comes back as stored.
-- Only `flattened` is opaque: Elasticsearch's own name for the type.
+- **Breaking:** the `:context` option is now `:repo` on every API function, and
+  named contexts (`config :dowser_client, contexts: [...]`) are gone: define a
+  repo, and set `:default_repo`. A call that still passes `:context` returns an
+  error naming `:repo`.
+- **Breaking:** only nine date formats are cast — `epoch_millis`,
+  `epoch_second`, `strict_date`, `strict_date_hour_minute_second(_millis)`,
+  `strict_date_time(_no_millis)` and `strict_hour_minute_second(_millis)`; see
+  `Dowser.Type.Date`. Any other format — including none, which Elasticsearch
+  reads as `strict_date_optional_time||epoch_millis` — comes back as stored. A
+  date is written at exactly its format's precision, and in UTC.
+- **Breaking:** a range is cast only when the Elixir struct holds it exactly: a
+  `date_range` needs `strict_date`, an `integer_range`/`long_range` integer
+  `gte`/`lte` bounds. Anything else comes back as stored.
+- **Breaking:** custom field codecs implement `@behaviour Dowser.Type` and
+  delegate to `Dowser.Type.load/2` and `Dowser.Type.dump/2`. The `:codec` option
+  still names them, at every tier.
+- **Breaking:** `Dowser.Elasticsearch.MappingCacher.put/3` takes `repo:`, and
+  raises without one — it used to store nothing when no `:default` context
+  existed.
+- **The mapping decides what a value is, never its shape.** A `geo_point` stored
+  as an object now loads to `{lat, lon}`; a map its type leaves uncast (a
+  `geo_shape`, an `integer_range` with float bounds) has its keys go through
+  `:keys`; a field the mapping doesn't know is left as it is.
 
+### Removed
+
+- **Breaking:** `Dowser.Elasticsearch.Codec.Date`, `.Binary`, `.DateRange`,
+  `.GeoPoint`, `.IP` and `.Range` — they are `Dowser.Type.Date` and so on in
+  `dowser_client`. `Dowser.Elasticsearch.Codec` no longer has `load/2`, `dump/2`
+  or a behaviour of its own.
+- **Breaking:** `Dowser.Elasticsearch.MappingError` — it is
+  `Dowser.MappingError`.
 ## [0.4.2] - 2026-10-05
 
 ### Fixed

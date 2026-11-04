@@ -17,7 +17,7 @@ defmodule Dowser.Elasticsearch.ReindexTest do
     test "GETs /_reindex" do
       {port, server} = start_server()
 
-      assert {:ok, body} = Reindex.list(context: context(port))
+      assert {:ok, body} = Reindex.list(repo: context(port))
       assert body["task"]["id"] == "node-1:12345"
 
       req = Task.await(server)
@@ -28,14 +28,14 @@ defmodule Dowser.Elasticsearch.ReindexTest do
     test "forwards url params" do
       {port, server} = start_server()
 
-      assert {:ok, _} = Reindex.list(params: [detailed: true], context: context(port))
+      assert {:ok, _} = Reindex.list(params: [detailed: true], repo: context(port))
       assert Task.await(server).path == "/_reindex?detailed=true"
     end
 
     test "wraps a non-2xx response in a Dowser.Elasticsearch.Error" do
       {port, server} = start_server(@server_error_response)
 
-      assert {:error, %Error{status: 500}} = Reindex.list(context: context(port))
+      assert {:error, %Error{status: 500}} = Reindex.list(repo: context(port))
 
       Task.await(server)
     end
@@ -45,7 +45,7 @@ defmodule Dowser.Elasticsearch.ReindexTest do
     test "GETs /_reindex/{task_id}" do
       {port, server} = start_server()
 
-      assert {:ok, _} = Reindex.get("node-1:12345", context: context(port))
+      assert {:ok, _} = Reindex.get("node-1:12345", repo: context(port))
 
       req = Task.await(server)
       assert req.method == "GET"
@@ -58,7 +58,7 @@ defmodule Dowser.Elasticsearch.ReindexTest do
       assert {:ok, _} =
                Reindex.get("node-1:12345",
                  params: [wait_for_completion: true, timeout: "30s"],
-                 context: context(port)
+                 repo: context(port)
                )
 
       assert Task.await(server).path ==
@@ -81,7 +81,7 @@ defmodule Dowser.Elasticsearch.ReindexTest do
     test "POSTs /_reindex/{task_id}/_cancel" do
       {port, server} = start_server()
 
-      assert {:ok, _} = Reindex.cancel("node-1:12345", context: context(port))
+      assert {:ok, _} = Reindex.cancel("node-1:12345", repo: context(port))
 
       req = Task.await(server)
       assert req.method == "POST"
@@ -96,7 +96,7 @@ defmodule Dowser.Elasticsearch.ReindexTest do
     test "cancel!/2 returns the body directly" do
       {port, server} = start_server()
 
-      assert %{"completed" => false} = Reindex.cancel!("node-1:12345", context: context(port))
+      assert %{"completed" => false} = Reindex.cancel!("node-1:12345", repo: context(port))
 
       Task.await(server)
     end
@@ -105,7 +105,7 @@ defmodule Dowser.Elasticsearch.ReindexTest do
       {port, server} = start_server(@server_error_response)
 
       assert_raise Error, fn ->
-        Reindex.cancel!("node-1:12345", context: context(port))
+        Reindex.cancel!("node-1:12345", repo: context(port))
       end
 
       Task.await(server)

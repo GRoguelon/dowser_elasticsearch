@@ -19,7 +19,7 @@ defmodule Dowser.Elasticsearch.Reindex do
   Built on `Dowser.Client`. The task id is a positional argument where the
   endpoint requires one; everything optional lives in `opts`.
 
-  All options are forwarded to `Dowser.Client.request/4`, e.g. `:context`,
+  All options are forwarded to `Dowser.Client.request/4`, e.g. `:repo`,
   `:params` (query-string parameters), `:format`, `:keys` and `:http_opts`
   (including `:headers`).
 

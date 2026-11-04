@@ -38,7 +38,7 @@ defmodule Dowser.Elasticsearch.Streamer do
       starts. `true` by default; `false` when you just opened it and know it
       is alive.
 
-  Everything else is forwarded to `Dowser.Elasticsearch.Search`, so `:context`,
+  Everything else is forwarded to `Dowser.Elasticsearch.Search`, so `:repo`,
   `:codec`, `:keys` and `:http_opts` all work as usual.
 
   A query with no `size` gets 1000, not Elasticsearch's default of 10 —

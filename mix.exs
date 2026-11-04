@@ -68,10 +68,10 @@ defmodule DowserElasticsearch.MixProject do
     [
       formatters: ["html"],
       main: "readme",
-      extras: ["README.md", "UPGRADE_0_2.md", "CHANGELOG.md"],
+      extras: ["README.md", "UPGRADE_0_5.md", "UPGRADE_0_2.md", "CHANGELOG.md"],
       source_ref: "v#{@version}",
       source_url: @source_url,
-      skip_undefined_reference_warnings_on: ["CHANGELOG.md", "UPGRADE_0_2.md"],
+      skip_undefined_reference_warnings_on: ["CHANGELOG.md", "UPGRADE_0_2.md", "UPGRADE_0_5.md"],
       groups_for_modules: [
         API: [
           Dowser.Elasticsearch.Cat,
@@ -81,6 +81,7 @@ defmodule DowserElasticsearch.MixProject do
           Dowser.Elasticsearch.Index,
           Dowser.Elasticsearch.Info,
           Dowser.Elasticsearch.Reindex,
+          Dowser.Elasticsearch.Repo,
           Dowser.Elasticsearch.Repository,
           Dowser.Elasticsearch.Search,
           Dowser.Elasticsearch.Streamer,

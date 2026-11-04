@@ -66,7 +66,7 @@ defmodule Dowser.Elasticsearch.CatTest do
     test "#{fun}/1 GETs #{path}" do
       {port, server} = start_server()
 
-      assert {:ok, _body} = apply(Cat, unquote(fun), [unquote(opts) ++ [context: context(port)]])
+      assert {:ok, _body} = apply(Cat, unquote(fun), [unquote(opts) ++ [repo: context(port)]])
 
       req = Task.await(server)
       assert req.method == "GET"
@@ -84,7 +84,7 @@ defmodule Dowser.Elasticsearch.CatTest do
 
       {port, server} = start_server(response)
 
-      assert {:ok, endpoints} = Cat.help(context: context(port))
+      assert {:ok, endpoints} = Cat.help(repo: context(port))
       assert endpoints == ["/_cat/allocation", "/_cat/shards", "/_cat/shards/{index}"]
 
       Task.await(server)
@@ -95,7 +95,7 @@ defmodule Dowser.Elasticsearch.CatTest do
     test "decodes the rows" do
       {port, server} = start_server()
 
-      assert {:ok, [row]} = Cat.indices(context: context(port))
+      assert {:ok, [row]} = Cat.indices(repo: context(port))
       assert row["docs.count"] == "42"
 
       Task.await(server)
@@ -105,7 +105,7 @@ defmodule Dowser.Elasticsearch.CatTest do
       {port, server} = start_server()
 
       assert {:ok, _} =
-               Cat.indices(params: [v: true, s: "docs.count:desc"], context: context(port))
+               Cat.indices(params: [v: true, s: "docs.count:desc"], repo: context(port))
 
       assert Task.await(server).path == "/_cat/indices?v=true&s=docs.count%3Adesc"
     end
@@ -113,7 +113,7 @@ defmodule Dowser.Elasticsearch.CatTest do
     test "wraps a non-2xx response in a Dowser.Elasticsearch.Error" do
       {port, server} = start_server(@server_error_response)
 
-      assert {:error, %Error{status: 500}} = Cat.indices(context: context(port))
+      assert {:error, %Error{status: 500}} = Cat.indices(repo: context(port))
 
       Task.await(server)
     end
@@ -123,7 +123,7 @@ defmodule Dowser.Elasticsearch.CatTest do
     test "returns the body directly" do
       {port, server} = start_server()
 
-      assert [%{"index" => "posts"}] = Cat.indices!(context: context(port))
+      assert [%{"index" => "posts"}] = Cat.indices!(repo: context(port))
 
       Task.await(server)
     end
@@ -132,7 +132,7 @@ defmodule Dowser.Elasticsearch.CatTest do
       {port, server} = start_server(@server_error_response)
 
       assert_raise Error, fn ->
-        Cat.indices!(context: context(port))
+        Cat.indices!(repo: context(port))
       end
 
       Task.await(server)

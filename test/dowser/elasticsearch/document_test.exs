@@ -53,7 +53,7 @@ defmodule Dowser.Elasticsearch.DocumentTest do
     test "index/3 POSTs the document to /{index}/_doc" do
       {port, server} = start_server()
 
-      assert {:ok, _} = Document.index(%{"title" => "hi"}, "posts", context: context(port))
+      assert {:ok, _} = Document.index(%{"title" => "hi"}, "posts", repo: context(port))
 
       req = Task.await(server)
       assert req.method == "POST"
@@ -65,7 +65,7 @@ defmodule Dowser.Elasticsearch.DocumentTest do
       {port, server} = start_server()
 
       assert {:ok, _} =
-               Document.index(%{"title" => "hi"}, "posts", id: "1", context: context(port))
+               Document.index(%{"title" => "hi"}, "posts", id: "1", repo: context(port))
 
       assert Task.await(server).path == "/posts/_doc/1"
     end
@@ -85,7 +85,7 @@ defmodule Dowser.Elasticsearch.DocumentTest do
       {port, server} = start_server()
 
       assert {:ok, _} =
-               Document.create(%{"title" => "hi"}, "posts", "1", context: context(port))
+               Document.create(%{"title" => "hi"}, "posts", "1", repo: context(port))
 
       req = Task.await(server)
       assert req.method == "POST"
@@ -96,7 +96,7 @@ defmodule Dowser.Elasticsearch.DocumentTest do
     test "get/3 GETs /{index}/_doc/{id}" do
       {port, server} = start_server()
 
-      assert {:ok, _} = Document.get("posts", "1", context: context(port))
+      assert {:ok, _} = Document.get("posts", "1", repo: context(port))
 
       req = Task.await(server)
       assert req.method == "GET"
@@ -106,7 +106,7 @@ defmodule Dowser.Elasticsearch.DocumentTest do
     test "delete/3 DELETEs /{index}/_doc/{id}" do
       {port, server} = start_server()
 
-      assert {:ok, _} = Document.delete("posts", "1", context: context(port))
+      assert {:ok, _} = Document.delete("posts", "1", repo: context(port))
 
       req = Task.await(server)
       assert req.method == "DELETE"
@@ -115,34 +115,34 @@ defmodule Dowser.Elasticsearch.DocumentTest do
 
     test "exists/3 HEADs /{index}/_doc/{id} and returns result tuples" do
       {port, server} = start_server(HTTPStub.head_response(200))
-      assert {:ok, true} = Document.exists("posts", "1", context: context(port))
+      assert {:ok, true} = Document.exists("posts", "1", repo: context(port))
 
       req = Task.await(server)
       assert req.method == "HEAD"
       assert req.path == "/posts/_doc/1"
 
       {port, server} = start_server(HTTPStub.head_response(404))
-      assert {:ok, false} = Document.exists("posts", "1", context: context(port))
+      assert {:ok, false} = Document.exists("posts", "1", repo: context(port))
       Task.await(server)
     end
 
     test "exists?/3 returns the bare boolean" do
       {port, server} = start_server(HTTPStub.head_response(200))
-      assert Document.exists?("posts", "1", context: context(port)) == true
+      assert Document.exists?("posts", "1", repo: context(port)) == true
       Task.await(server)
     end
 
     test "get_source/3 GETs /{index}/_source/{id}" do
       {port, server} = start_server()
 
-      assert {:ok, _} = Document.get_source("posts", "1", context: context(port))
+      assert {:ok, _} = Document.get_source("posts", "1", repo: context(port))
       assert Task.await(server).path == "/posts/_source/1"
     end
 
     test "source_exists/3 HEADs /{index}/_source/{id}" do
       {port, server} = start_server(HTTPStub.head_response(404))
 
-      assert {:ok, false} = Document.source_exists("posts", "1", context: context(port))
+      assert {:ok, false} = Document.source_exists("posts", "1", repo: context(port))
 
       req = Task.await(server)
       assert req.method == "HEAD"
@@ -153,9 +153,7 @@ defmodule Dowser.Elasticsearch.DocumentTest do
       {port, server} = start_server()
 
       assert {:ok, _} =
-               Document.update(%{"doc" => %{"title" => "hi"}}, "posts", "1",
-                 context: context(port)
-               )
+               Document.update(%{"doc" => %{"title" => "hi"}}, "posts", "1", repo: context(port))
 
       req = Task.await(server)
       assert req.method == "POST"
@@ -180,7 +178,7 @@ defmodule Dowser.Elasticsearch.DocumentTest do
       {port, server} = start_server(json_response(body))
 
       assert {:ok, doc} =
-               Document.get("posts", "1", context: HTTPStub.context_with_casting(port))
+               Document.get("posts", "1", repo: HTTPStub.context_with_casting(port))
 
       assert doc["_source"]["published_at"] == ~U[2026-08-11 00:00:00.000Z]
       assert doc["_source"]["title"] == "hi"
@@ -195,7 +193,7 @@ defmodule Dowser.Elasticsearch.DocumentTest do
       {port, server} = start_server(json_response(body))
 
       assert {:ok, source} =
-               Document.get_source("posts", "1", context: HTTPStub.context_with_casting(port))
+               Document.get_source("posts", "1", repo: HTTPStub.context_with_casting(port))
 
       assert source["published_at"] == ~U[2026-08-11 00:00:00.000Z]
       assert source["title"] == "hi"
@@ -214,7 +212,7 @@ defmodule Dowser.Elasticsearch.DocumentTest do
       assert {:ok, %{"docs" => [doc]}} =
                Document.mget(%{"ids" => ["1"]},
                  index: "posts",
-                 context: HTTPStub.context_with_casting(port)
+                 repo: HTTPStub.context_with_casting(port)
                )
 
       assert doc["_source"]["published_at"] == ~U[2026-08-11 00:00:00.000Z]
@@ -229,7 +227,7 @@ defmodule Dowser.Elasticsearch.DocumentTest do
       document = %{"published_at" => ~U[2026-08-11 00:00:00Z], "title" => "hi"}
 
       assert {:ok, _} =
-               Document.index(document, "posts", context: HTTPStub.context_with_casting(port))
+               Document.index(document, "posts", repo: HTTPStub.context_with_casting(port))
 
       assert Task.await(server).body ==
                ~s({"published_at":"2026-08-11T00:00:00Z","title":"hi"})
@@ -242,7 +240,7 @@ defmodule Dowser.Elasticsearch.DocumentTest do
       body = %{"doc" => %{"published_at" => ~U[2026-08-11 00:00:00Z]}}
 
       assert {:ok, _} =
-               Document.update(body, "posts", "1", context: HTTPStub.context_with_casting(port))
+               Document.update(body, "posts", "1", repo: HTTPStub.context_with_casting(port))
 
       assert Task.await(server).body == ~s({"doc":{"published_at":"2026-08-11T00:00:00Z"}})
     end
@@ -257,7 +255,7 @@ defmodule Dowser.Elasticsearch.DocumentTest do
       }
 
       assert {:ok, _} =
-               Document.update(body, "posts", "1", context: HTTPStub.context_with_casting(port))
+               Document.update(body, "posts", "1", repo: HTTPStub.context_with_casting(port))
 
       assert Task.await(server).body ==
                ~s({"doc":{"published_at":"2026-08-11T00:00:00Z"},) <>
@@ -271,12 +269,12 @@ defmodule Dowser.Elasticsearch.DocumentTest do
       body = %{"script" => %{"source" => "ctx._source.views++"}}
 
       assert {:ok, _} =
-               Document.update(body, "posts", "1", context: HTTPStub.context_with_casting(port))
+               Document.update(body, "posts", "1", repo: HTTPStub.context_with_casting(port))
 
       assert Task.await(server).body == ~s({"script":{"source":"ctx._source.views++"}})
     end
 
-    test ":codec resolves request > context > config > the default" do
+    test ":codec resolves request > repo > config > the default" do
       HTTPStub.start_mapping_cacher!(%{"properties" => %{"title" => %{"type" => "text"}}})
 
       body = ~s({"_index":"posts","_source":{"title":"hello"}})
@@ -284,7 +282,7 @@ defmodule Dowser.Elasticsearch.DocumentTest do
       title = fn opts ->
         {port, server} = start_server(json_response(body))
         context = HTTPStub.context_with_casting(port)
-        {:ok, doc} = Document.get("posts", "1", Keyword.put(opts, :context, context))
+        {:ok, doc} = Document.get("posts", "1", Keyword.put(opts, :repo, context))
         Task.await(server)
 
         doc["_source"]["title"]
@@ -298,12 +296,12 @@ defmodule Dowser.Elasticsearch.DocumentTest do
       on_exit(fn -> Application.delete_env(:dowser_elasticsearch, :codec) end)
       assert title.([]) == "HELLO"
 
-      # 2. the context's own decoder, over the application environment.
+      # 2. the repo's own decoder, over the application environment.
       {port, server} = start_server(json_response(body))
 
       assert {:ok, doc} =
                Document.get("posts", "1",
-                 context: [
+                 repo: [
                    endpoint: "http://127.0.0.1:#{port}",
                    decoder: {Dowser.Elasticsearch.Codec, codec: ExclaimCodec}
                  ]
@@ -320,7 +318,7 @@ defmodule Dowser.Elasticsearch.DocumentTest do
       assert {:ok, doc} =
                Document.get("posts", "1",
                  codec: ExclaimCodec,
-                 context: [
+                 repo: [
                    endpoint: "http://127.0.0.1:#{port}",
                    decoder: {Dowser.Elasticsearch.Codec, codec: UpcaseCodec}
                  ]
@@ -338,7 +336,7 @@ defmodule Dowser.Elasticsearch.DocumentTest do
 
       assert {:ok, doc} =
                Document.index(%{"published_at" => ~U[2026-08-11 00:00:00Z]}, "posts",
-                 context: context(port)
+                 repo: context(port)
                )
 
       assert doc["_source"]["published_at"] == "2026-08-11T00:00:00.000Z"
@@ -363,7 +361,7 @@ defmodule Dowser.Elasticsearch.DocumentTest do
       assert {:ok, _} =
                Document.bulk(operations,
                  index: "posts",
-                 context: HTTPStub.context_with_casting(port)
+                 repo: HTTPStub.context_with_casting(port)
                )
 
       req = Task.await(server)
@@ -376,7 +374,7 @@ defmodule Dowser.Elasticsearch.DocumentTest do
       {port, server} = start_server()
 
       operations = [%{"index" => %{"_id" => "1"}}, %{"title" => "hi"}]
-      assert {:ok, _} = Document.bulk(operations, context: context(port))
+      assert {:ok, _} = Document.bulk(operations, repo: context(port))
 
       req = Task.await(server)
       assert req.method == "POST"
@@ -388,7 +386,7 @@ defmodule Dowser.Elasticsearch.DocumentTest do
     test "bulk/2 targets an index" do
       {port, server} = start_server()
 
-      assert {:ok, _} = Document.bulk([%{}, %{}], index: "posts", context: context(port))
+      assert {:ok, _} = Document.bulk([%{}, %{}], index: "posts", repo: context(port))
       assert Task.await(server).path == "/posts/_bulk"
     end
 
@@ -413,7 +411,7 @@ defmodule Dowser.Elasticsearch.DocumentTest do
       ]
 
       assert {:error, %BulkError{} = error} =
-               Document.bulk(operations, index: "posts", context: context(port))
+               Document.bulk(operations, index: "posts", repo: context(port))
 
       assert error.succeeded == 1
       assert error.took == 5
@@ -451,7 +449,7 @@ defmodule Dowser.Elasticsearch.DocumentTest do
       assert {:error, %BulkError{} = error} =
                Document.bulk(operations,
                  index: "posts",
-                 context: context(port) ++ [keys: :atoms]
+                 repo: context(port) ++ [keys: :atoms]
                )
 
       assert [%{action: "delete", status: 503, id: "1"}] = error.failed
@@ -466,7 +464,7 @@ defmodule Dowser.Elasticsearch.DocumentTest do
       assert {:ok, %{"errors" => false}} =
                Document.bulk([%{"index" => %{}}, %{"title" => "hi"}],
                  index: "posts",
-                 context: context(port)
+                 repo: context(port)
                )
     end
 
@@ -482,7 +480,7 @@ defmodule Dowser.Elasticsearch.DocumentTest do
                    fn ->
                      Document.bulk!([%{"create" => %{"_id" => "1"}}, %{"title" => "hi"}],
                        index: "posts",
-                       context: context(port)
+                       repo: context(port)
                      )
                    end
     end
@@ -494,7 +492,7 @@ defmodule Dowser.Elasticsearch.DocumentTest do
       assert {:error, _} =
                Document.bulk([%{"index" => %{}}, %{"title" => "hi"}],
                  index: "posts",
-                 context: context(port),
+                 repo: context(port),
                  retry: [base_delay_ms: 1, max_delay_ms: 1]
                )
 
@@ -507,7 +505,7 @@ defmodule Dowser.Elasticsearch.DocumentTest do
       assert {:error, _} =
                Document.bulk([%{"index" => %{"_id" => "1"}}, %{"title" => "hi"}],
                  index: "posts",
-                 context: context(port),
+                 repo: context(port),
                  retry: [base_delay_ms: 1, max_delay_ms: 1]
                )
 
@@ -520,7 +518,7 @@ defmodule Dowser.Elasticsearch.DocumentTest do
       assert {:error, _} =
                Document.mget(%{"ids" => ["1"]},
                  index: "posts",
-                 context: context(port),
+                 repo: context(port),
                  retry: [base_delay_ms: 1, max_delay_ms: 1]
                )
 
@@ -531,7 +529,7 @@ defmodule Dowser.Elasticsearch.DocumentTest do
       {port, server} = start_server()
 
       assert {:ok, _} =
-               Document.mget(%{"ids" => ["1", "2"]}, index: "posts", context: context(port))
+               Document.mget(%{"ids" => ["1", "2"]}, index: "posts", repo: context(port))
 
       req = Task.await(server)
       assert req.method == "POST"
@@ -546,7 +544,7 @@ defmodule Dowser.Elasticsearch.DocumentTest do
 
       assert {:ok, _} =
                Document.delete_by_query(%{"query" => %{"match_all" => %{}}}, "posts",
-                 context: context(port)
+                 repo: context(port)
                )
 
       req = Task.await(server)
@@ -558,7 +556,7 @@ defmodule Dowser.Elasticsearch.DocumentTest do
     test "update_by_query/3 POSTs the body to /{index}/_update_by_query" do
       {port, server} = start_server()
 
-      assert {:ok, _} = Document.update_by_query(%{}, "posts", context: context(port))
+      assert {:ok, _} = Document.update_by_query(%{}, "posts", repo: context(port))
 
       req = Task.await(server)
       assert req.path == "/posts/_update_by_query"
@@ -569,7 +567,7 @@ defmodule Dowser.Elasticsearch.DocumentTest do
       {port, server} = start_server()
 
       body = %{"source" => %{"index" => "old"}, "dest" => %{"index" => "new"}}
-      assert {:ok, _} = Document.reindex(body, context: context(port))
+      assert {:ok, _} = Document.reindex(body, repo: context(port))
 
       req = Task.await(server)
       assert req.method == "POST"
@@ -582,7 +580,7 @@ defmodule Dowser.Elasticsearch.DocumentTest do
     test "delete_by_query_rethrottle/3 POSTs with requests_per_second" do
       {port, server} = start_server()
 
-      assert {:ok, _} = Document.delete_by_query_rethrottle("t:1", 10, context: context(port))
+      assert {:ok, _} = Document.delete_by_query_rethrottle("t:1", 10, repo: context(port))
 
       req = Task.await(server)
       assert req.method == "POST"
@@ -592,14 +590,14 @@ defmodule Dowser.Elasticsearch.DocumentTest do
     test "update_by_query_rethrottle/3 POSTs with requests_per_second" do
       {port, server} = start_server()
 
-      assert {:ok, _} = Document.update_by_query_rethrottle("t:1", -1, context: context(port))
+      assert {:ok, _} = Document.update_by_query_rethrottle("t:1", -1, repo: context(port))
       assert Task.await(server).path == "/_update_by_query/t:1/_rethrottle?requests_per_second=-1"
     end
 
     test "reindex_rethrottle/3 POSTs with requests_per_second" do
       {port, server} = start_server()
 
-      assert {:ok, _} = Document.reindex_rethrottle("t:1", 10, context: context(port))
+      assert {:ok, _} = Document.reindex_rethrottle("t:1", 10, repo: context(port))
       assert Task.await(server).path == "/_reindex/t:1/_rethrottle?requests_per_second=10"
     end
   end
@@ -609,9 +607,7 @@ defmodule Dowser.Elasticsearch.DocumentTest do
       {port, server} = start_server()
 
       assert {:ok, _} =
-               Document.termvectors(%{"doc" => %{"title" => "hi"}}, "posts",
-                 context: context(port)
-               )
+               Document.termvectors(%{"doc" => %{"title" => "hi"}}, "posts", repo: context(port))
 
       req = Task.await(server)
       assert req.method == "POST"
@@ -621,7 +617,7 @@ defmodule Dowser.Elasticsearch.DocumentTest do
     test "termvectors/3 targets /{index}/_termvectors/{id} when an id is given" do
       {port, server} = start_server()
 
-      assert {:ok, _} = Document.termvectors(%{}, "posts", id: "1", context: context(port))
+      assert {:ok, _} = Document.termvectors(%{}, "posts", id: "1", repo: context(port))
       assert Task.await(server).path == "/posts/_termvectors/1"
     end
 
@@ -629,7 +625,7 @@ defmodule Dowser.Elasticsearch.DocumentTest do
       {port, server} = start_server()
 
       assert {:ok, _} =
-               Document.mtermvectors(%{"ids" => ["1"]}, index: "posts", context: context(port))
+               Document.mtermvectors(%{"ids" => ["1"]}, index: "posts", repo: context(port))
 
       req = Task.await(server)
       assert req.method == "POST"

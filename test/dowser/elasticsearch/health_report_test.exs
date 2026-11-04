@@ -17,7 +17,7 @@ defmodule Dowser.Elasticsearch.HealthReportTest do
     test "GETs /_health_report and decodes the response" do
       {port, server} = start_server()
 
-      assert {:ok, body} = HealthReport.health_report(context: context(port))
+      assert {:ok, body} = HealthReport.health_report(repo: context(port))
       assert body["status"] == "green"
 
       req = Task.await(server)
@@ -29,7 +29,7 @@ defmodule Dowser.Elasticsearch.HealthReportTest do
       {port, server} = start_server()
 
       assert {:ok, _} =
-               HealthReport.health_report(feature: "shards_availability", context: context(port))
+               HealthReport.health_report(feature: "shards_availability", repo: context(port))
 
       assert Task.await(server).path == "/_health_report/shards_availability"
     end
@@ -37,7 +37,7 @@ defmodule Dowser.Elasticsearch.HealthReportTest do
     test "unwraps a one-element feature list" do
       {port, server} = start_server()
 
-      assert {:ok, _} = HealthReport.health_report(feature: ["disk"], context: context(port))
+      assert {:ok, _} = HealthReport.health_report(feature: ["disk"], repo: context(port))
       assert Task.await(server).path == "/_health_report/disk"
     end
 
@@ -54,7 +54,7 @@ defmodule Dowser.Elasticsearch.HealthReportTest do
       assert {:ok, _} =
                HealthReport.health_report(
                  params: [verbose: false, size: 10],
-                 context: context(port)
+                 repo: context(port)
                )
 
       assert Task.await(server).path == "/_health_report?verbose=false&size=10"
@@ -63,7 +63,7 @@ defmodule Dowser.Elasticsearch.HealthReportTest do
     test "wraps a non-2xx response in a Dowser.Elasticsearch.Error" do
       {port, server} = start_server(@server_error_response)
 
-      assert {:error, %Error{status: 500}} = HealthReport.health_report(context: context(port))
+      assert {:error, %Error{status: 500}} = HealthReport.health_report(repo: context(port))
 
       Task.await(server)
     end
@@ -73,7 +73,7 @@ defmodule Dowser.Elasticsearch.HealthReportTest do
     test "returns the body directly" do
       {port, server} = start_server()
 
-      assert %{"status" => "green"} = HealthReport.health_report!(context: context(port))
+      assert %{"status" => "green"} = HealthReport.health_report!(repo: context(port))
 
       Task.await(server)
     end
@@ -82,7 +82,7 @@ defmodule Dowser.Elasticsearch.HealthReportTest do
       {port, server} = start_server(@server_error_response)
 
       assert_raise Error, fn ->
-        HealthReport.health_report!(context: context(port))
+        HealthReport.health_report!(repo: context(port))
       end
 
       Task.await(server)

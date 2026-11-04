@@ -28,7 +28,7 @@ defmodule Dowser.Elasticsearch.Cluster do
       a genuine error.
 
   All remaining options are forwarded to `Dowser.Client.request/4`, e.g.
-  `:context`, `:params` (query-string parameters), `:format`, `:keys` and
+  `:repo`, `:params` (query-string parameters), `:format`, `:keys` and
   `:http_opts` (including `:headers`) — plus `:codec`, this package's own,
   which picks the per-field codec for this one request (see
   `Dowser.Elasticsearch.Codec`).

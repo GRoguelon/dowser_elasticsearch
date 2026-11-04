@@ -17,7 +17,7 @@ defmodule Dowser.Elasticsearch.XPackTest do
     test "GETs /_xpack and decodes the response" do
       {port, server} = start_server()
 
-      assert {:ok, body} = XPack.info(context: context(port))
+      assert {:ok, body} = XPack.info(repo: context(port))
       assert body["license"]["type"] == "basic"
 
       req = Task.await(server)
@@ -29,7 +29,7 @@ defmodule Dowser.Elasticsearch.XPackTest do
       {port, server} = start_server()
 
       assert {:ok, _} =
-               XPack.info(params: [categories: "license,features"], context: context(port))
+               XPack.info(params: [categories: "license,features"], repo: context(port))
 
       assert Task.await(server).path == "/_xpack?categories=license%2Cfeatures"
     end
@@ -37,7 +37,7 @@ defmodule Dowser.Elasticsearch.XPackTest do
     test "wraps a non-2xx response in a Dowser.Elasticsearch.Error" do
       {port, server} = start_server(@server_error_response)
 
-      assert {:error, %Error{status: 500}} = XPack.info(context: context(port))
+      assert {:error, %Error{status: 500}} = XPack.info(repo: context(port))
 
       Task.await(server)
     end
@@ -46,7 +46,7 @@ defmodule Dowser.Elasticsearch.XPackTest do
       {port, server} = start_server(@server_error_response)
 
       assert_raise Error, fn ->
-        XPack.info!(context: context(port))
+        XPack.info!(repo: context(port))
       end
 
       Task.await(server)
@@ -57,7 +57,7 @@ defmodule Dowser.Elasticsearch.XPackTest do
     test "GETs /_xpack/usage" do
       {port, server} = start_server()
 
-      assert {:ok, body} = XPack.usage(context: context(port))
+      assert {:ok, body} = XPack.usage(repo: context(port))
       assert body["watcher"]["count"]["active"] == 2
 
       req = Task.await(server)
@@ -68,14 +68,14 @@ defmodule Dowser.Elasticsearch.XPackTest do
     test "forwards url params" do
       {port, server} = start_server()
 
-      assert {:ok, _} = XPack.usage(params: [master_timeout: "30s"], context: context(port))
+      assert {:ok, _} = XPack.usage(params: [master_timeout: "30s"], repo: context(port))
       assert Task.await(server).path == "/_xpack/usage?master_timeout=30s"
     end
 
     test "usage!/1 returns the body directly" do
       {port, server} = start_server()
 
-      assert %{"license" => _} = XPack.usage!(context: context(port))
+      assert %{"license" => _} = XPack.usage!(repo: context(port))
 
       Task.await(server)
     end

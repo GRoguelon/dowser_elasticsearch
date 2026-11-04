@@ -36,31 +36,31 @@ defmodule Dowser.Elasticsearch.RepositoryTest do
     test "search/2 injects the index option" do
       {port, server} = start_server()
 
-      assert {:ok, _} = StaticRepo.search(%{}, context: context(port))
+      assert {:ok, _} = StaticRepo.search(%{}, repo: context(port))
       assert Task.await(server).path == "/probes/_search"
     end
 
     test "search/2 overwrites a caller-supplied index" do
       {port, server} = start_server()
 
-      assert {:ok, _} = StaticRepo.search(%{}, index: "other", context: context(port))
+      assert {:ok, _} = StaticRepo.search(%{}, index: "other", repo: context(port))
       assert Task.await(server).path == "/probes/_search"
     end
 
     test "positional index arguments disappear" do
       {port, server} = start_server()
 
-      assert {:ok, _} = StaticRepo.get_doc("1", context: context(port))
+      assert {:ok, _} = StaticRepo.get_doc("1", repo: context(port))
       assert Task.await(server).path == "/probes/_doc/1"
 
       {port, server} = start_server()
 
-      assert {:ok, _} = StaticRepo.index_doc(%{"title" => "hi"}, context: context(port))
+      assert {:ok, _} = StaticRepo.index_doc(%{"title" => "hi"}, repo: context(port))
       assert Task.await(server).path == "/probes/_doc"
 
       {port, server} = start_server()
 
-      assert {:ok, _} = StaticRepo.delete_index(context: context(port))
+      assert {:ok, _} = StaticRepo.delete_index(repo: context(port))
 
       req = Task.await(server)
       assert req.method == "DELETE"
@@ -70,21 +70,21 @@ defmodule Dowser.Elasticsearch.RepositoryTest do
     test "opts-style index functions target the repository index" do
       {port, server} = start_server()
 
-      assert {:ok, _} = StaticRepo.refresh(context: context(port))
+      assert {:ok, _} = StaticRepo.refresh(repo: context(port))
       assert Task.await(server).path == "/probes/_refresh"
     end
 
     test "bang and predicate variants are generated" do
       {port, server} = start_server()
-      assert %{"acknowledged" => true} = StaticRepo.search!(%{}, context: context(port))
+      assert %{"acknowledged" => true} = StaticRepo.search!(%{}, repo: context(port))
       Task.await(server)
 
       {port, server} = start_server(HTTPStub.head_response(404))
-      assert {:ok, false} = StaticRepo.doc_exists("1", context: context(port))
+      assert {:ok, false} = StaticRepo.doc_exists("1", repo: context(port))
       Task.await(server)
 
       {port, server} = start_server(HTTPStub.head_response(200))
-      assert StaticRepo.doc_exists?("1", context: context(port)) == true
+      assert StaticRepo.doc_exists?("1", repo: context(port)) == true
       Task.await(server)
     end
 
@@ -99,21 +99,21 @@ defmodule Dowser.Elasticsearch.RepositoryTest do
     test "the :index option is the term passed to the index function" do
       {port, server} = start_server()
 
-      assert {:ok, _} = DynamicRepo.search(%{}, index: "day1", context: context(port))
+      assert {:ok, _} = DynamicRepo.search(%{}, index: "day1", repo: context(port))
       assert Task.await(server).path == "/my_index_day1/_search"
     end
 
     test "positional index arguments become terms" do
       {port, server} = start_server()
 
-      assert {:ok, _} = DynamicRepo.get_doc("day1", "1", context: context(port))
+      assert {:ok, _} = DynamicRepo.get_doc("day1", "1", repo: context(port))
       assert Task.await(server).path == "/my_index_day1/_doc/1"
     end
 
     test "an absent :index option passes nil to the index function" do
       {port, server} = start_server()
 
-      assert {:ok, _} = DynamicRepo.search(%{}, context: context(port))
+      assert {:ok, _} = DynamicRepo.search(%{}, repo: context(port))
       assert Task.await(server).path == "/my_index_/_search"
     end
   end
@@ -122,7 +122,7 @@ defmodule Dowser.Elasticsearch.RepositoryTest do
     test "keeps everything but the excluded functions" do
       {port, server} = start_server()
 
-      assert {:ok, _} = ExceptRepo.count(%{}, context: context(port))
+      assert {:ok, _} = ExceptRepo.count(%{}, repo: context(port))
       assert Task.await(server).path == "/probes/_count"
 
       refute function_exported?(ExceptRepo, :msearch, 2)
