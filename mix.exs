@@ -57,7 +57,7 @@ defmodule DowserElasticsearch.MixProject do
       links: %{
         "GitHub" => @source_url,
         "Changelog" => "https://dowser-elasticsearch.hexdocs.pm/changelog.html",
-        "Upgrade guide" => "https://dowser-elasticsearch.hexdocs.pm/upgrade_0_2.html",
+        "Upgrade guide" => "https://dowser-elasticsearch.hexdocs.pm/upgrade_0_5.html",
         "Dowser.Client" => "https://hex.pm/packages/dowser_client"
       }
     ]

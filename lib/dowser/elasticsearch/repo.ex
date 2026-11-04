@@ -62,8 +62,8 @@ defmodule Dowser.Elasticsearch.Repo do
       use Dowser.Repo, unquote(opts)
 
       @impl Dowser.Repo
-      def verify(context) do
-        Dowser.Elasticsearch.Repo.verify(context)
+      def verify(config) do
+        Dowser.Elasticsearch.Repo.verify(config)
       end
     end
   end

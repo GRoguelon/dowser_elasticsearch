@@ -27,8 +27,9 @@ defmodule Dowser.Elasticsearch.Document do
   `:mapping`, `:struct`, `:types`, `:unknown_fields` and `:mapping_failure` (see
   `Dowser.Elasticsearch.Codec`).
 
-  Values are cast automatically wherever `Dowser.Elasticsearch.Codec` is
-  configured as `:decoder`/`:encoder` — no per-call option needed. A response
+  Values are cast wherever `Dowser.Elasticsearch.Codec` is the repo's
+  `:decoder`/`:encoder` — no per-call option needed — and on any call that
+  passes `:struct` or `:mapping`. A response
   carries each document's own `_index`, so reads need telling nothing; the
   writing functions name the index each source is going to and where in the
   request body it sits, which is the mapping the encoder needs.

@@ -155,8 +155,8 @@ defmodule Dowser.Elasticsearch.Client do
     decoder =
       with decoder when not is_nil(decoder) <- fetch_option(opts, :decoder),
            {:ok, {fun, decoder_opts}} <- Dowser.Client.Decoder.decoder(decoder),
-           {:ok, context} <- Config.resolve(repo(opts)) do
-        {fun, Keyword.put(decoder_opts, :repo_config, context)}
+           {:ok, config} <- Config.resolve(repo(opts)) do
+        {fun, Keyword.put(decoder_opts, :repo_config, config)}
       else
         _other -> nil
       end
@@ -179,8 +179,8 @@ defmodule Dowser.Elasticsearch.Client do
 
     with encoder when not is_nil(encoder) <- fetch_option(opts, :encoder),
          {:ok, {fun, encoder_opts}} <- Dowser.Client.Encoder.encoder(encoder),
-         {:ok, context} <- Config.resolve(repo(opts)) do
-      {fun, Keyword.put(encoder_opts, :repo_config, context)}
+         {:ok, config} <- Config.resolve(repo(opts)) do
+      {fun, Keyword.put(encoder_opts, :repo_config, config)}
     else
       _other ->
         nil
@@ -198,8 +198,8 @@ defmodule Dowser.Elasticsearch.Client do
 
   defp repo_option(opts, key) do
     case Config.resolve(repo(opts)) do
-      {:ok, context} ->
-        Map.fetch!(context, key)
+      {:ok, config} ->
+        Map.fetch!(config, key)
 
       {:error, _reason} ->
         nil

@@ -16,16 +16,19 @@ the endpoint itself — instead of a hand-rolled query builder.
 - **Streaming for large result sets.** `Dowser.Elasticsearch.Streamer` walks a
   whole search as an Elixir `Stream`, and `stream_slices/4` walks several
   slices of it at once.
+- **Repos, like Ecto's.** A cluster is a module of your own
+  (`use Dowser.Elasticsearch.Repo`), configured under your application and
+  started in your supervision tree — one per cluster, or one per tenant with
+  dynamic repos.
 - **A repository pattern for free.** `Dowser.Elasticsearch.Repository` binds
   the index-related functions of `Search`, `Document`, and `Index` to a
   fixed or computed index, so your code stops repeating `index: "posts"` on
   every call.
-- **Optional automatic type casting.** `Dowser.Elasticsearch.Codec` casts
-  dates, IPs, and other Elasticsearch types to and from native Elixir terms,
-  per index mapping, with no per-call option needed.
+- **Optional type casting.** `Dowser.Elasticsearch.Codec` casts dates, ranges,
+  IP addresses and other Elasticsearch types to and from Elixir terms, per
+  index mapping — into maps, or into structs of your own (`struct:`).
 - **No dependencies to pick.** Transport is handled by `dowser_client`, over
-  OTP's `:httpc` and Elixir's built-in `JSON` module — nothing to add, nothing
-  to configure.
+  OTP's `:httpc` and Elixir's built-in `JSON` module — nothing to add.
 
 ## Installation
 
@@ -34,7 +37,7 @@ Add `dowser_elasticsearch` to your list of dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:dowser_elasticsearch, "~> 0.2.2"}
+    {:dowser_elasticsearch, "~> 0.5.0"}
   ]
 end
 ```
@@ -43,11 +46,11 @@ Documentation can be generated with [ExDoc](https://github.com/elixir-lang/ex_do
 and published on [HexDocs](https://hexdocs.pm). Once published, the docs can
 be found at <https://hexdocs.pm/dowser_elasticsearch>.
 
-**Upgrading from 0.1.x?** 0.2.2 rewires how the casting is configured and
-follows `dowser_client` 0.2 in dropping its optional dependencies. The
-casting functions themselves are unchanged — see
-[UPGRADE_0_2.md](UPGRADE_0_2.md) for the migration path, and
-[CHANGELOG.md](CHANGELOG.md) for everything that changed.
+**Upgrading from 0.4?** 0.5 replaces contexts with repos, moves the casting to
+`dowser_client` and casts only nine date formats — see
+[UPGRADE_0_5.md](UPGRADE_0_5.md) for the migration path, and
+[CHANGELOG.md](CHANGELOG.md) for everything that changed. Coming from 0.1.x,
+start with [UPGRADE_0_2.md](UPGRADE_0_2.md).
 
 ## Configuration
 
@@ -512,6 +515,79 @@ included — so its body is exactly what the caller gets. Set
 `config :dowser_elasticsearch, default_repo: MyApp.SearchMock` in `config/test.exs`
 to have every call that names no repo go to it.
 
+### Mock the repo with Mimic
+
+[Mimic](https://hexdocs.pm/mimic) stubs the functions of an existing module,
+per test process. A test-only repo module becomes the default repo in the test
+environment, so the code under test — which names no repo — talks to it, and
+each test says what `request/4` answers. `request/4` is the one function every
+API call goes through.
+
+```elixir
+# mix.exs
+defp deps do
+  [
+    # ...
+    {:mimic, "~> 1.10", only: :test}
+  ]
+end
+
+defp elixirc_paths(:test), do: ["lib", "test/support"]
+defp elixirc_paths(_env), do: ["lib"]
+```
+
+```elixir
+# test/support/search_mock.ex — a repo like any other, compiled for tests only
+defmodule MyApp.SearchMock do
+  use Dowser.Elasticsearch.Repo, otp_app: :my_app
+end
+```
+
+```elixir
+# config/test.exs — the default repo is the mock in tests
+config :my_app, MyApp.SearchMock, endpoint: "http://search.test"
+config :dowser_elasticsearch, default_repo: MyApp.SearchMock
+```
+
+```elixir
+# test/test_helper.exs
+Mimic.copy(MyApp.SearchMock)
+ExUnit.start()
+```
+
+```elixir
+defmodule MyApp.PostsTest do
+  use ExUnit.Case, async: true
+  use Mimic
+
+  test "searches the posts" do
+    expect(MyApp.SearchMock, :request, fn :post, "/posts/_search", _query, _opts ->
+      {:ok, %Dowser.Client.Response{status: 200, headers: %{}, body: %{"hits" => %{"hits" => []}}}}
+    end)
+
+    # MyApp.Posts.search/1 calls Dowser.Elasticsearch.Search.search(query, index: "posts"),
+    # with no :repo — so it goes to the default repo, the mock.
+    assert {:ok, %{"hits" => %{"hits" => []}}} = MyApp.Posts.search("hello")
+  end
+end
+```
+
+A few things to know:
+
+- The stub stands in for the whole transport, so the body it returns is what
+  the caller gets — nothing is decoded or cast. Let the request through with
+  `call_original/3` where the casting matters, or stub the HTTP layer instead.
+- Mimic stubs are per process, which keeps `async: true` tests apart. A request
+  made from another process — a `Task`, a GenServer — needs
+  `Mimic.allow(MyApp.SearchMock, self(), pid)`, or `set_mimic_global` in a test
+  that isn't async.
+- Mimic replaces calls *into* the module. The repo's own verbs
+  (`MyApp.SearchMock.get/2`, …) reach `request/4` from inside it, so a test
+  calling them directly stubs the verb it calls.
+- Calls that name a repo (`repo: MyApp.Search`) bypass the default: point
+  `repo:` at the same mock in tests, or have the code read its repo from
+  configuration.
+
 ### Against a real cluster
 
 Point a repo at a local cluster in `config/test.exs`, and start the mapping
@@ -586,6 +662,16 @@ implemented, each as a pair of functions (`search/2` and `search!/2`).
 mix deps.get
 mix test
 mix lint    # format --check-formatted, credo --strict, dialyzer
+```
+
+This package is developed alongside `dowser_client`. To build against a
+working copy of it rather than the published release — needed whenever this
+package relies on a `dowser_client` change not on Hex yet — set
+`DOWSER_CLIENT_PATH`:
+
+```sh
+DOWSER_CLIENT_PATH=../dowser_client mix deps.get
+DOWSER_CLIENT_PATH=../dowser_client mix test
 ```
 
 `mix lint` runs the three checks this project keeps green. Dialyzer's PLTs are

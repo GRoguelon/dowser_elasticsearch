@@ -33,7 +33,7 @@ defmodule Dowser.Elasticsearch.HTTPStub do
   @doc """
   Starts `Dowser.Elasticsearch.MappingCacher` for the duration of the calling
   test (via `start_supervised!/1`), returning `mapping` for every
-  `{context, index}` lookup.
+  `{repo, index}` lookup.
   """
   def start_mapping_cacher!(mapping) do
     ExUnit.Callbacks.start_supervised!(

@@ -1,8 +1,8 @@
 defmodule Dowser.Elasticsearch.MappingCacherTest do
   use ExUnit.Case, async: false
 
-  alias Dowser.Repo.Config
   alias Dowser.Elasticsearch.MappingCacher
+  alias Dowser.Repo.Config
 
   @context Config.new(endpoint: "http://x:9200")
 

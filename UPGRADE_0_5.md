@@ -1,15 +1,19 @@
 # Upgrading from 0.4 to 0.5
 
-0.5.0 follows `dowser_client` 0.4, and brings two changes with it:
+0.5.0 follows `dowser_client` 0.4, and brings these changes with it:
 
 - **Repos replace contexts.** A cluster is a module of your own —
-  `use Dowser.Elasticsearch.Repo` — configured under your application and started
-  in your supervision tree, like an `Ecto.Repo`. The `:context` option is now
-  `:repo`.
+  `use Dowser.Elasticsearch.Repo` — configured under your application and
+  started in your supervision tree, like an `Ecto.Repo`. The `:context` option
+  is now `:repo`.
 - **The casting moved to `dowser_client`**, shared with `dowser_opensearch`.
-  `Dowser.Elasticsearch.Codec` and `Dowser.Elasticsearch.MappingCacher` stay; the
-  field codecs became `dowser_client`'s field types, and date casting is now
-  limited to nine formats.
+  `Dowser.Elasticsearch.Codec` and `Dowser.Elasticsearch.MappingCacher` stay;
+  the field codecs became `dowser_client`'s field types, and date casting is
+  now limited to nine formats.
+- **New casting options.** `:codec` is now `:types`, and `:struct`,
+  `:unknown_fields` and a module for `:mapping` join it.
+- **Your application starts the mapping cacher**; this package no longer
+  does.
 
 Start with the table, then read
 [Watch out for silence](#watch-out-for-silence): the date changes return
@@ -33,8 +37,9 @@ has the transport-level details, for code that calls `Dowser.Client` directly.
 | `config :dowser_elasticsearch, mapping_cacher_opts: [...]` | the child's options: `{Dowser.Elasticsearch.MappingCacher, ttl: ...}` |
 | `MappingCacher.put(index, mapping, context: ...)` | `MappingCacher.put(index, mapping, repo: ...)` — required |
 
-What stays: `config :dowser_elasticsearch, mappings: / mapping_failure:`, the `[:dowser_elasticsearch, :mapping, :failure]` telemetry
-event, `Dowser.Elasticsearch.Repository`, and every API function's signature.
+What stays: `config :dowser_elasticsearch, mappings: / mapping_failure:`, the
+`[:dowser_elasticsearch, :mapping, :failure]` telemetry event,
+`Dowser.Elasticsearch.Repository`, and every API function's signature.
 
 ## 1. Bump the dependency
 

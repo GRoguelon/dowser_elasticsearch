@@ -26,10 +26,10 @@ defmodule Dowser.Elasticsearch.Search do
   `:mapping`, `:struct`, `:types`, `:unknown_fields` and `:mapping_failure` (see
   `Dowser.Elasticsearch.Codec`).
 
-  Response values are cast automatically wherever
-  `Dowser.Elasticsearch.Codec` is configured as `:decoder` — no per-call
-  option needed. A query is never cast: build it in the shape Elasticsearch
-  expects.
+  Response values are cast wherever `Dowser.Elasticsearch.Codec` is the repo's
+  `:decoder` — no per-call option needed — and on any call that passes
+  `:struct` or `:mapping`. A query is never cast: build it in the shape
+  Elasticsearch expects.
 
   On a 2xx response every function returns `{:ok, body}` with the decoded
   response body. A non-2xx response returns
@@ -66,11 +66,12 @@ defmodule Dowser.Elasticsearch.Search do
       |> Dowser.Elasticsearch.Search.search(index: "posts")
 
   Every key in the response is cast per `:keys`. Wherever
-  `Dowser.Elasticsearch.Codec` is configured as `:decoder`, each hit's
-  `_source` is additionally cast against its own index mapping (dates become `DateTime`,
-  IPs become `:inet` tuples, and so on) — automatically, at any nesting
-  depth, so `msearch/2`, `search_template/2`, `scroll/2` and the rest get the
-  same treatment with no extra options.
+  `Dowser.Elasticsearch.Codec` is the repo's `:decoder` (or the call passes
+  `:struct` or `:mapping`), each hit's `_source` is additionally cast against
+  its own index mapping — dates become `Date`/`DateTime`, ranges `Range`, IP
+  addresses `:inet` tuples, and so on, or the whole source a struct — at any
+  nesting depth, so `msearch/2`, `search_template/2`, `scroll/2` and the rest
+  get the same treatment with no extra options.
 
   ## Options
 

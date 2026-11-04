@@ -4,6 +4,7 @@ defmodule Dowser.Elasticsearch.CodecTest do
   alias Dowser.Elasticsearch.Codec
   alias Dowser.Elasticsearch.HTTPStub
   alias Dowser.MappingError
+  alias Dowser.Repo.Config
 
   @mapping %{
     "properties" => %{
@@ -12,7 +13,7 @@ defmodule Dowser.Elasticsearch.CodecTest do
     }
   }
 
-  @context Dowser.Repo.Config.new(endpoint: "http://x:9200")
+  @context Config.new(endpoint: "http://x:9200")
 
   defp context_opts(extra \\ []), do: Keyword.merge([repo_config: @context], extra)
 

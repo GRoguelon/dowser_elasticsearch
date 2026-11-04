@@ -2,6 +2,7 @@ defmodule Dowser.Elasticsearch.RepoTest do
   use ExUnit.Case, async: false
 
   alias Dowser.Client.HTTP.Stub
+  alias Dowser.Elasticsearch.Info
 
   defmodule Search do
     use Dowser.Elasticsearch.Repo, otp_app: :dowser_elasticsearch
@@ -95,7 +96,7 @@ defmodule Dowser.Elasticsearch.RepoTest do
       Application.put_env(:dowser_elasticsearch, :default_repo, Search)
       stub_root(@elasticsearch)
 
-      assert {:ok, %{"tagline" => _}} = Dowser.Elasticsearch.Info.info()
+      assert {:ok, %{"tagline" => _}} = Info.info()
       assert_received {:url, "http://search:9200/"}
     end
 
@@ -103,7 +104,7 @@ defmodule Dowser.Elasticsearch.RepoTest do
       Application.put_env(:dowser_elasticsearch, :default_repo, Search)
       stub_root(@elasticsearch)
 
-      assert {:ok, _body} = Dowser.Elasticsearch.Info.info(repo: Logs)
+      assert {:ok, _body} = Info.info(repo: Logs)
       assert_received {:url, "http://logs:9200/"}
     end
 
@@ -112,29 +113,29 @@ defmodule Dowser.Elasticsearch.RepoTest do
       Application.put_env(:dowser_elasticsearch, :default_repo, Search)
       stub_root(@elasticsearch)
 
-      assert {:ok, _body} = Dowser.Elasticsearch.Info.info(repo: {Search, :tenant_a})
+      assert {:ok, _body} = Info.info(repo: {Search, :tenant_a})
       assert_received {:url, "http://tenant-a:9200/"}
 
       Search.with_dynamic_repo(:tenant_a, fn ->
-        assert {:ok, _body} = Dowser.Elasticsearch.Info.info()
+        assert {:ok, _body} = Info.info()
       end)
 
       assert_received {:url, "http://tenant-a:9200/"}
 
-      assert {:ok, _body} = Dowser.Elasticsearch.Info.info()
+      assert {:ok, _body} = Info.info()
       assert_received {:url, "http://search:9200/"}
     end
 
     test "an ad-hoc repo works without a module" do
       stub_root(@elasticsearch)
 
-      assert {:ok, _body} = Dowser.Elasticsearch.Info.info(repo: [endpoint: "http://adhoc:9200"])
+      assert {:ok, _body} = Info.info(repo: [endpoint: "http://adhoc:9200"])
       assert_received {:url, "http://adhoc:9200/"}
     end
 
     test "no :repo and no default repo is an error naming both" do
       assert {:error, %Dowser.Client.Error{reason: :no_repo} = error} =
-               Dowser.Elasticsearch.Info.info()
+               Info.info()
 
       assert Exception.message(error) =~ ":default_repo"
     end
@@ -143,7 +144,7 @@ defmodule Dowser.Elasticsearch.RepoTest do
       Application.put_env(:dowser_elasticsearch, :default_repo, Search)
 
       assert {:error, %Dowser.Client.Error{reason: {:removed_option, :context}}} =
-               Dowser.Elasticsearch.Info.info(context: [endpoint: "http://x:9200"])
+               Info.info(context: [endpoint: "http://x:9200"])
     end
 
     test "the repo's own casting configuration is used" do
@@ -155,7 +156,7 @@ defmodule Dowser.Elasticsearch.RepoTest do
       Application.put_env(:dowser_elasticsearch, :default_repo, Search)
       stub_root(@elasticsearch)
 
-      assert {:ok, %{tagline: _}} = Dowser.Elasticsearch.Info.info()
+      assert {:ok, %{tagline: _}} = Info.info()
     end
   end
 
