@@ -1,10 +1,10 @@
 defmodule Dowser.Elasticsearch.MappingCacherTest do
   use ExUnit.Case, async: false
 
-  alias Dowser.Client.Context
+  alias Dowser.Repo.Config
   alias Dowser.Elasticsearch.MappingCacher
 
-  @context Context.new(endpoint: "http://x:9200")
+  @context Config.new(endpoint: "http://x:9200")
 
   describe "get/2" do
     test "fetches on a miss and caches the result" do
@@ -94,8 +94,8 @@ defmodule Dowser.Elasticsearch.MappingCacherTest do
 
       start_supervised!({MappingCacher, fetch: fetch})
 
-      alice = Context.new(endpoint: "http://x:9200", auth: {:basic, "alice", "s3cret"})
-      bob = Context.new(endpoint: "http://x:9200", auth: {:basic, "bob", "hunter2"})
+      alice = Config.new(endpoint: "http://x:9200", auth: {:basic, "alice", "s3cret"})
+      bob = Config.new(endpoint: "http://x:9200", auth: {:basic, "bob", "hunter2"})
 
       assert {:ok, "mapping for alice"} = MappingCacher.get(alice, "posts")
       assert {:ok, "mapping for bob"} = MappingCacher.get(bob, "posts")
@@ -113,8 +113,8 @@ defmodule Dowser.Elasticsearch.MappingCacherTest do
       start_supervised!({MappingCacher, fetch: fetch})
 
       auth = {:basic, "alice", "s3cret"}
-      one = Context.new(endpoint: "http://x:9200", auth: auth)
-      two = Context.new(endpoint: "http://x:9200", auth: auth, keys: :atoms)
+      one = Config.new(endpoint: "http://x:9200", auth: auth)
+      two = Config.new(endpoint: "http://x:9200", auth: auth, keys: :atoms)
 
       assert {:ok, :mapping} = MappingCacher.get(one, "posts")
       assert {:ok, :mapping} = MappingCacher.get(two, "posts")
@@ -126,7 +126,7 @@ defmodule Dowser.Elasticsearch.MappingCacherTest do
     test "credentials are hashed into the key, never stored in the table" do
       start_supervised!({MappingCacher, fetch: fn _context, _index -> {:ok, :mapping} end})
 
-      context = Context.new(endpoint: "http://x:9200", auth: {:basic, "alice", "s3cret"})
+      context = Config.new(endpoint: "http://x:9200", auth: {:basic, "alice", "s3cret"})
       assert {:ok, :mapping} = MappingCacher.get(context, "posts")
 
       assert {"http://x:9200", scope, "posts"} = MappingCacher.key(context, "posts")
@@ -143,8 +143,8 @@ defmodule Dowser.Elasticsearch.MappingCacherTest do
       fetch = fn context, _index -> {:ok, context.auth} end
       start_supervised!({MappingCacher, fetch: fetch})
 
-      alice = Context.new(endpoint: "http://x:9200", auth: {:basic, "alice", "s3cret"})
-      bob = Context.new(endpoint: "http://x:9200", auth: {:basic, "bob", "hunter2"})
+      alice = Config.new(endpoint: "http://x:9200", auth: {:basic, "alice", "s3cret"})
+      bob = Config.new(endpoint: "http://x:9200", auth: {:basic, "bob", "hunter2"})
 
       assert {:ok, _} = MappingCacher.get(alice, "posts")
       assert {:ok, _} = MappingCacher.get(bob, "posts")

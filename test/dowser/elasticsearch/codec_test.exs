@@ -12,9 +12,9 @@ defmodule Dowser.Elasticsearch.CodecTest do
     }
   }
 
-  @context Dowser.Client.Context.new(endpoint: "http://x:9200")
+  @context Dowser.Repo.Config.new(endpoint: "http://x:9200")
 
-  defp context_opts(extra \\ []), do: Keyword.merge([context: @context], extra)
+  defp context_opts(extra \\ []), do: Keyword.merge([repo_config: @context], extra)
 
   defp decode_opts(extra \\ []),
     do: context_opts(Keyword.put_new(extra, :key_fn, &Function.identity/1))

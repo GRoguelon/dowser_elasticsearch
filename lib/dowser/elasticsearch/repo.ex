@@ -27,6 +27,18 @@ defmodule Dowser.Elasticsearch.Repo do
   See `Dowser.Repo` for the configuration, `init/2`, and the HTTP verbs a repo
   exposes (`MyApp.Search.post("/_ml/trained_models/_search", query)`).
 
+  The same module can be started again under other names — a cluster per
+  tenant, say — and each process picks the instance it talks to:
+
+      {:ok, _pid} = MyApp.Search.start_link(name: :tenant_a, endpoint: "https://a.internal:9200")
+
+      MyApp.Search.put_dynamic_repo(:tenant_a)
+      Dowser.Elasticsearch.Search.search(query, index: "posts", repo: MyApp.Search)
+
+      Dowser.Elasticsearch.Search.search(query, index: "posts", repo: {MyApp.Search, :tenant_a})
+
+  See "Static and dynamic repos" in `Dowser.Repo`.
+
   ## Checking the engine
 
   With `verify: true`, the repo checks at startup that its endpoint is an

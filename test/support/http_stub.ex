@@ -15,11 +15,11 @@ defmodule Dowser.Elasticsearch.HTTPStub do
   def head_response(200), do: "HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n"
   def head_response(404), do: "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n"
 
-  @doc "Context options pointing at the stub server."
+  @doc "An ad-hoc repo (`repo: [...]`) pointing at the stub server."
   def context(port), do: [endpoint: "http://127.0.0.1:#{port}"]
 
   @doc """
-  Context options pointing at the stub server, with
+  An ad-hoc repo pointing at the stub server, with
   `Dowser.Elasticsearch.Codec` wired in as both passes.
   """
   def context_with_casting(port) do

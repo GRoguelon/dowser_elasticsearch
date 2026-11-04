@@ -44,28 +44,28 @@ defmodule Dowser.Elasticsearch.RepoTest do
     test "recognizes Elasticsearch by its x-elastic-product header" do
       stub_root(%{"version" => %{"number" => "8.15.0"}}, [{"x-elastic-product", "Elasticsearch"}])
 
-      assert Search.verify(Search.context()) == {:ok, {:elasticsearch, "8.15.0"}}
+      assert Search.verify(Search.config()) == {:ok, {:elasticsearch, "8.15.0"}}
       assert_received {:url, "http://search:9200/"}
     end
 
     test "recognizes an older release by its tagline" do
       stub_root(@elasticsearch)
 
-      assert Search.verify(Search.context()) == {:ok, {:elasticsearch, "8.15.0"}}
+      assert Search.verify(Search.config()) == {:ok, {:elasticsearch, "8.15.0"}}
     end
 
     test "rejects an OpenSearch cluster, tagline or not" do
       stub_root(Map.put(@opensearch, "tagline", "You Know, for Search"))
 
       assert {:error, {:unexpected_engine, %{"distribution" => "opensearch"}}} =
-               Search.verify(Search.context())
+               Search.verify(Search.config())
     end
 
     test "rejects a cluster with neither signature" do
       stub_root(%{"version" => %{"number" => "1.0.0"}, "tagline" => "Something else"})
 
       assert {:error, {:unexpected_engine, %{"number" => "1.0.0"}}} =
-               Search.verify(Search.context())
+               Search.verify(Search.config())
     end
 
     test "reports a response that isn't a cluster description" do
@@ -74,7 +74,7 @@ defmodule Dowser.Elasticsearch.RepoTest do
       end)
 
       assert {:error, {:unexpected_response, 401, %{"error" => "no"}}} =
-               Search.verify(Search.context())
+               Search.verify(Search.config())
     end
 
     test "ignores the repo's decoder: the cluster description is not a document" do
@@ -86,7 +86,7 @@ defmodule Dowser.Elasticsearch.RepoTest do
 
       stub_root(@elasticsearch)
 
-      assert Search.verify(Search.context()) == {:ok, {:elasticsearch, "8.15.0"}}
+      assert Search.verify(Search.config()) == {:ok, {:elasticsearch, "8.15.0"}}
     end
   end
 
@@ -105,6 +105,24 @@ defmodule Dowser.Elasticsearch.RepoTest do
 
       assert {:ok, _body} = Dowser.Elasticsearch.Info.info(repo: Logs)
       assert_received {:url, "http://logs:9200/"}
+    end
+
+    test "a dynamic instance is reached through put_dynamic_repo/1 or {repo, name}" do
+      start_supervised!({Search, name: :tenant_a, endpoint: "http://tenant-a:9200"})
+      Application.put_env(:dowser_elasticsearch, :default_repo, Search)
+      stub_root(@elasticsearch)
+
+      assert {:ok, _body} = Dowser.Elasticsearch.Info.info(repo: {Search, :tenant_a})
+      assert_received {:url, "http://tenant-a:9200/"}
+
+      Search.with_dynamic_repo(:tenant_a, fn ->
+        assert {:ok, _body} = Dowser.Elasticsearch.Info.info()
+      end)
+
+      assert_received {:url, "http://tenant-a:9200/"}
+
+      assert {:ok, _body} = Dowser.Elasticsearch.Info.info()
+      assert_received {:url, "http://search:9200/"}
     end
 
     test "an ad-hoc repo works without a module" do

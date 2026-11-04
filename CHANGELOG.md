@@ -25,6 +25,10 @@ it.
   at startup that its endpoint is Elasticsearch (`GET /`), and `engine/0`
   returns the version it found. A repo also exposes the HTTP verbs, for
   endpoints this package doesn't cover.
+- **Dynamic repos:** the same repo module started under other names, each with
+  its own configuration — a cluster per tenant, say — chosen per process
+  (`put_dynamic_repo/1`) or per call (`repo: {MyApp.Search, :tenant_a}`). See
+  `Dowser.Repo`.
 - **`long_range` is cast to a `Range`**, like `integer_range`.
 - **`NaiveDateTime` and `Time` dates**, for fields formatted
   `strict_date_hour_minute_second(_millis)` and

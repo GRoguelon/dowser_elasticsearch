@@ -85,10 +85,13 @@ children = [MyApp.Repo, MyApp.Search, MyAppWeb.Endpoint]
 A repo that isn't started still works — it resolves its configuration on every
 request instead of once — so scripts and Mix tasks need nothing special.
 
-Two things a repo adds:
+Three things a repo adds:
 
 - `init/2`, for configuration that can't live in a config file — see
   `Dowser.Repo`;
+- dynamic instances: the same module started again under other names — a
+  cluster per tenant — chosen per process (`put_dynamic_repo/1`) or per call
+  (`repo: {MyApp.Search, :tenant_a}`);
 - `verify: true`, which makes the repo check at startup that its endpoint
   really is Elasticsearch (`GET /` carries no OpenSearch `distribution`, and
   either the `x-elastic-product: Elasticsearch` header or Elasticsearch's

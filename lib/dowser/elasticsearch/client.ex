@@ -17,7 +17,7 @@ defmodule Dowser.Elasticsearch.Client do
   # environment — which the API functions need in order to hand the decoder and
   # the encoder what their endpoint's shape requires.
 
-  alias Dowser.Client.Context
+  alias Dowser.Repo.Config
 
   ## Public functions — the request funnel
 
@@ -142,8 +142,8 @@ defmodule Dowser.Elasticsearch.Client do
     decoder =
       with decoder when not is_nil(decoder) <- fetch_option(opts, :decoder),
            {:ok, {fun, decoder_opts}} <- Dowser.Client.Decoder.decoder(decoder),
-           {:ok, context} <- Context.resolve(repo(opts)) do
-        {fun, Keyword.put(decoder_opts, :context, context)}
+           {:ok, context} <- Config.resolve(repo(opts)) do
+        {fun, Keyword.put(decoder_opts, :repo_config, context)}
       else
         _other -> nil
       end
@@ -153,7 +153,7 @@ defmodule Dowser.Elasticsearch.Client do
 
   @doc """
   The encoder in play as `{function, opts}` — its own options plus the repo,
-  resolved, as `:context` — or `nil` when none is configured.
+  resolved, as `:repo_config` — or `nil` when none is configured.
 
   `Dowser.Client` normalizes and calls the encoder itself for every other
   endpoint; `Dowser.Elasticsearch.Document.bulk/2` needs it in hand, because a
@@ -164,8 +164,8 @@ defmodule Dowser.Elasticsearch.Client do
   def resolve_encoder(opts) do
     with encoder when not is_nil(encoder) <- fetch_option(opts, :encoder),
          {:ok, {fun, encoder_opts}} <- Dowser.Client.Encoder.encoder(encoder),
-         {:ok, context} <- Context.resolve(repo(opts)) do
-      {fun, Keyword.put(encoder_opts, :context, context)}
+         {:ok, context} <- Config.resolve(repo(opts)) do
+      {fun, Keyword.put(encoder_opts, :repo_config, context)}
     else
       _other ->
         nil
@@ -182,7 +182,7 @@ defmodule Dowser.Elasticsearch.Client do
   end
 
   defp repo_option(opts, key) do
-    case Context.resolve(repo(opts)) do
+    case Config.resolve(repo(opts)) do
       {:ok, context} ->
         Map.fetch!(context, key)
 
