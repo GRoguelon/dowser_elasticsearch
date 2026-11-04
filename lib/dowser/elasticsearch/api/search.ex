@@ -22,8 +22,8 @@ defmodule Dowser.Elasticsearch.Search do
 
   All remaining options are forwarded to `Dowser.Client.request/4`, e.g.
   `:repo`, `:params` (query-string parameters), `:format`, `:keys` and
-  `:http_opts` (including `:headers`) — plus `:codec`, this package's own,
-  which picks the per-field codec for this one request (see
+  `:http_opts` (including `:headers`) — plus this package's casting options:
+  `:mapping`, `:struct`, `:types`, `:unknown_fields` and `:mapping_failure` (see
   `Dowser.Elasticsearch.Codec`).
 
   Response values are cast automatically wherever

@@ -8,8 +8,9 @@ defmodule Dowser.Elasticsearch.Info do
 
   All options are forwarded to `Dowser.Client.request/4`, e.g. `:repo`,
   `:params` (query-string parameters), `:format`, `:keys` and `:http_opts`
-  (including `:headers`) — plus `:codec`, this package's own, which picks the
-  per-field codec for this one request (see `Dowser.Elasticsearch.Codec`).
+  (including `:headers`) — plus this package's casting options: `:mapping`,
+  `:struct`, `:types`, `:unknown_fields` and `:mapping_failure` (see
+  `Dowser.Elasticsearch.Codec`).
 
   On a 2xx response the function returns `{:ok, body}` with the decoded
   response body. A non-2xx response returns

@@ -1,20 +1,17 @@
 import Config
 
-# `dowser_client` 0.2.0 has no adapters to select: HTTP is OTP's `:httpc` and
-# JSON is Elixir's `JSON`. Point it at a cluster — and, optionally, at this
-# package's casting — with `contexts:`; see the README.
+# This package needs no configuration of its own. An application defines a
+# repo per cluster, configured under its own application, and names the one
+# a call without `:repo` goes to; see the README:
 #
-#     config :dowser_client,
-#       contexts: [
-#         default: [
-#           endpoint: "http://localhost:9200",
-#           decoder: Dowser.Elasticsearch.Codec,
-#           encoder: Dowser.Elasticsearch.Codec
-#         ]
-#       ]
+#     config :my_app, MyApp.Search,
+#       endpoint: "http://localhost:9200",
+#       decoder: Dowser.Elasticsearch.Codec,
+#       encoder: Dowser.Elasticsearch.Codec
 #
-# The per-field codec those two dispatch into defaults to
-# `Dowser.Elasticsearch.Codec`, and is overridable globally here, on a context,
-# or per request:
+#     config :dowser_elasticsearch, default_repo: MyApp.Search
 #
-#     config :dowser_elasticsearch, codec: MyApp.Codec
+# The casting options default from here too — the mapping source, the type
+# module leaf values go through, what to do with an unknown field:
+#
+#     config :dowser_elasticsearch, mapping: MyApp.Mappings, types: MyApp.Types

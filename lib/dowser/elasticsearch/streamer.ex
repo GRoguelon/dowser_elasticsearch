@@ -39,7 +39,7 @@ defmodule Dowser.Elasticsearch.Streamer do
       is alive.
 
   Everything else is forwarded to `Dowser.Elasticsearch.Search`, so `:repo`,
-  `:codec`, `:keys` and `:http_opts` all work as usual.
+  `:struct`, `:types`, `:keys` and `:http_opts` all work as usual.
 
   A query with no `size` gets 1000, not Elasticsearch's default of 10 —
   at 10 hits per round trip a million documents is a hundred thousand

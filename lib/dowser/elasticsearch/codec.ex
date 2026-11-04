@@ -13,16 +13,16 @@ defmodule Dowser.Elasticsearch.Codec do
   `Dowser.Elasticsearch.Search` casts automatically — no per-call option needed.
   Mappings are fetched (and cached) through `Dowser.Elasticsearch.MappingCacher`.
 
-  The casting itself is `dowser_client`'s, shared with `dowser_opensearch`:
-  `Dowser.Codec` documents the options (`:codec`, `:mapping`,
-  `:mapping_failure`, …) and what happens when a mapping can't be fetched,
-  `Dowser.Source` how a document is walked, and `Dowser.Type` how each value is
-  cast. This module is Elasticsearch's configuration of it:
+  The casting itself is `dowser_client`'s, shared with the other backend:
+  `Dowser.Codec` documents the options and what happens when a mapping can't be
+  fetched, `Dowser.Source` how a document is walked, and `Dowser.Type` how each
+  value is cast. This module is Elasticsearch's configuration of it:
 
-    * mappings come from `Dowser.Elasticsearch.MappingCacher`;
-    * `:codec` and `:mapping_failure` default to the `:dowser_elasticsearch`
-      application environment
-      (`config :dowser_elasticsearch, codec: MyApp.Type, mapping_failure: :warn`);
+    * mappings come from `Dowser.Elasticsearch.MappingCacher` unless
+      `:mapping` says otherwise;
+    * `:types`, `:unknown_fields` and `:mapping_failure` default to the
+      `:dowser_elasticsearch` application environment
+      (`config :dowser_elasticsearch, types: MyApp.Types`);
     * a failed fetch emits `[:dowser_elasticsearch, :mapping, :failure]`;
     * a `flattened` field is opaque — see below.
 
@@ -49,25 +49,35 @@ defmodule Dowser.Elasticsearch.Codec do
   is wholly untrusted, `keys: :atoms!` (`String.to_existing_atom/1`) is the
   option that cannot grow the table at all.
 
-  ## Casting a type of your own
+  ## The casting options
 
-  `:codec` names the `Dowser.Type` module every leaf value is cast through —
-  see `Dowser.Type` for writing one. It resolves most-specific-first:
+  Five options decide how documents are cast; each can be passed on any API
+  call, given to the codec in a repo's configuration, or set for the whole
+  application — most specific first:
 
-    1. **Per request** — `:codec` alongside any other option:
+      Dowser.Elasticsearch.Search.search(query, index: "posts", types: MyApp.Types)
 
-           Dowser.Elasticsearch.Document.get("posts", "1", codec: MyApp.Type)
+      config :my_app, MyApp.Search,
+        decoder: {Dowser.Elasticsearch.Codec, types: MyApp.Types},
+        encoder: {Dowser.Elasticsearch.Codec, types: MyApp.Types}
 
-    2. **Per repo** — named alongside the pass it belongs to:
+      config :dowser_elasticsearch, types: MyApp.Types
 
-           decoder: {Dowser.Elasticsearch.Codec, codec: MyApp.Type},
-           encoder: {Dowser.Elasticsearch.Codec, codec: MyApp.Type}
+    * `:mapping` — where the mapping comes from: a map, a `Dowser.Mapping`
+      module, or a document module. Defaults to `Dowser.Elasticsearch.MappingCacher`, the
+      cluster's mapping. Documents come back as maps.
+    * `:struct` — a document module (`Dowser.Schema`): every document is loaded
+      into its struct, and its struct dumped back, against its own mapping.
+      Per call only.
+    * `:types` — the `Dowser.Type` module leaf values are cast through (default
+      `Dowser.Type`); see `Dowser.Type` for writing one.
+    * `:unknown_fields` — `:keep` (default) or `:raise` a
+      `Dowser.UnknownFieldError` for a field the mapping doesn't declare.
+    * `:mapping_failure` — `:error` (default), `:warn` or `:ignore` when the
+      mapping can't be fetched; see `Dowser.Codec`.
 
-    3. **Globally**:
-
-           config :dowser_elasticsearch, codec: MyApp.Type
-
-    4. `Dowser.Type`, when none of the above is set.
+  `:mapping` and `:struct` ask for casting outright: on a call to a repo with
+  no `:decoder`/`:encoder` configured, they bring this codec in for that call.
   """
 
   ## Module attributes

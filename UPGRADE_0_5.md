@@ -28,12 +28,13 @@ has the transport-level details, for code that calls `Dowser.Client` directly.
 | `@behaviour Dowser.Elasticsearch.Codec` | `@behaviour Dowser.Type` |
 | `Dowser.Elasticsearch.Codec.load/2`, `dump/2` | `Dowser.Type.load/2`, `dump/2` |
 | `Dowser.Elasticsearch.MappingError` | `Dowser.MappingError` |
+| `codec: MyApp.Type` (per request, on the codec, or `config :dowser_elasticsearch, codec:`) | `types: MyApp.Type` |
+| the mapping cacher, started by this package | started by your application: `children = [..., Dowser.Elasticsearch.MappingCacher]` |
+| `config :dowser_elasticsearch, mapping_cacher_opts: [...]` | the child's options: `{Dowser.Elasticsearch.MappingCacher, ttl: ...}` |
 | `MappingCacher.put(index, mapping, context: ...)` | `MappingCacher.put(index, mapping, repo: ...)` — required |
 
-What stays: the `:codec` option and its three tiers, `config :dowser_elasticsearch,
-codec: / mappings: / mapping_failure: / mapping_cacher_opts:`, the
-`[:dowser_elasticsearch, :mapping, :failure]` telemetry event,
-`Dowser.Elasticsearch.Repository`, and every API function's signature.
+What stays: `config :dowser_elasticsearch, mappings: / mapping_failure:`, the `[:dowser_elasticsearch, :mapping, :failure]` telemetry
+event, `Dowser.Elasticsearch.Repository`, and every API function's signature.
 
 ## 1. Bump the dependency
 
@@ -99,6 +100,27 @@ Three things a repo adds:
   found. It is off by default: a cluster that is down would stop your
   application from booting.
 
+### Start the mapping cacher yourself
+
+This package used to start `Dowser.Elasticsearch.MappingCacher` on its own. It no
+longer does: if you cast against the cluster's mappings — a repo with
+`decoder:`/`encoder:` set to `Dowser.Elasticsearch.Codec` — start it with your repo,
+and move its options there:
+
+```diff
+- config :dowser_elasticsearch, mapping_cacher_opts: [ttl: :timer.minutes(10)]
+
+  children = [
+    MyApp.Search,
++   {Dowser.Elasticsearch.MappingCacher, ttl: :timer.minutes(10)}
+  ]
+```
+
+A cacher that isn't started now fails the request with a `Dowser.MappingError`
+naming it, where 0.4 would have left every value uncast. You don't need it
+at all if you give the mappings yourself — `config :dowser_elasticsearch, mapping:
+MyApp.Mappings` for the whole application, or `struct:` / `mapping:` per call.
+
 ## 3. `:context` is `:repo`
 
 ```diff
@@ -142,9 +164,39 @@ The per-type modules moved to `dowser_client`, and the behaviour with them:
 ```
 
 `Dowser.Elasticsearch.Codec` is still the module a repo names as `:decoder` and
-`:encoder`, and `:codec` still points it at your type module — per request,
-per repo, or globally. It no longer has `load/2`, `dump/2` or a behaviour of
-its own.
+`:encoder`, but it no longer has `load/2`, `dump/2` or a behaviour of its own.
+
+The option pointing it at your type module is now `:types` — per request, on
+the codec, or globally:
+
+```diff
+- Document.get("posts", "1", codec: MyApp.Type)
++ Document.get("posts", "1", types: MyApp.Type)
+
+- decoder: {Dowser.Elasticsearch.Codec, codec: MyApp.Type}
++ decoder: {Dowser.Elasticsearch.Codec, types: MyApp.Type}
+
+- config :dowser_elasticsearch, codec: MyApp.Type
++ config :dowser_elasticsearch, types: MyApp.Type
+```
+
+A request that still passes `codec:` fails with an error naming `:types`, and
+so does a codec or an application environment still configured with it — a
+`:codec` left in place would otherwise be ignored, and every value come back
+uncast.
+
+### New casting options
+
+`:types` sits with four more options, all set the same three ways — see
+`Dowser.Elasticsearch.Codec`:
+
+- `:mapping` takes a module now, not only a map: a `Dowser.Mapping`
+  implementation, or a document module (its own mapping);
+- `:struct` loads every document into a document module's struct
+  (`Dowser.Schema`), and dumps it back;
+- `:unknown_fields: :raise` returns a `Dowser.UnknownFieldError` for a field
+  the mapping doesn't declare (the default, `:keep`, is what v0.2 did);
+- `:mapping_failure` is unchanged.
 
 ## 5. `MappingError` moved
 
@@ -221,7 +273,7 @@ end
 ```
 
 ```elixir
-config :dowser_elasticsearch, codec: MyApp.Type
+config :dowser_elasticsearch, types: MyApp.Type
 ```
 
 ### Dates are written exactly, and in UTC

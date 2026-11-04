@@ -5,6 +5,7 @@ defmodule Dowser.Elasticsearch.Helpers do
   alias Dowser.Elasticsearch.Error
   alias Dowser.Elasticsearch.Index
   alias Dowser.MappingError
+  alias Dowser.UnknownFieldError
 
   ## Typespecs
 
@@ -31,11 +32,14 @@ defmodule Dowser.Elasticsearch.Helpers do
     {:error, Error.new(status, body)}
   end
 
-  # A codec that raised because it had no mapping to cast against is reported
-  # as itself, not as the `Dowser.Client` decode/encode failure wrapping it:
-  # the caller can do something about the first and nothing about the second.
-  def parse_result({:error, %Dowser.Client.Error{reason: {kind, %MappingError{} = error}}})
-      when kind in [:decode_failed, :encode_failed] do
+  # A codec that raised because it had no mapping to cast against, or met a
+  # field the mapping doesn't declare under `unknown_fields: :raise`, is
+  # reported as itself, not as the `Dowser.Client` decode/encode failure
+  # wrapping it: the caller can do something about the first and nothing about
+  # the second.
+  def parse_result({:error, %Dowser.Client.Error{reason: {kind, %error_type{} = error}}})
+      when kind in [:decode_failed, :encode_failed] and
+             error_type in [MappingError, UnknownFieldError] do
     {:error, error}
   end
 

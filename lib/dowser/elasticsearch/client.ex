@@ -5,7 +5,9 @@ defmodule Dowser.Elasticsearch.Client do
   #
   # Every API function goes through the verbs below rather than calling
   # `Dowser.Client` directly, so the options this package adds on top of the
-  # client's are handled in one place — the default repo and `:codec`. A request
+  # client's are handled in one place — the default repo and the casting
+  # options (`:mapping`, `:struct`, `:types`, `:unknown_fields`,
+  # `:mapping_failure`). A request
   # option only some endpoints honoured would be worse than none at all: the
   # rest would ignore it silently.
   #
@@ -18,6 +20,12 @@ defmodule Dowser.Elasticsearch.Client do
   # the encoder what their endpoint's shape requires.
 
   alias Dowser.Repo.Config
+
+  ## Module attributes
+
+  @codec Dowser.Elasticsearch.Codec
+
+  @casting_options [:mapping, :struct, :types, :unknown_fields, :mapping_failure]
 
   ## Public functions — the request funnel
 
@@ -39,12 +47,12 @@ defmodule Dowser.Elasticsearch.Client do
 
   @doc """
   Runs a request against `repo/1`'s repo, through `Dowser.Repo.request/5`,
-  with `:codec` folded in (see `put_codec/1`).
+  with the casting options folded in (see `put_casting/1`).
   """
   @spec request(Dowser.Client.method(), String.t(), term(), keyword()) :: Dowser.Client.result()
   def request(method, path, body, opts) do
     repo = repo(opts)
-    opts = opts |> put_codec() |> Keyword.delete(:repo)
+    opts = opts |> put_casting() |> Keyword.delete(:repo)
 
     Dowser.Repo.request(repo, method, path, body, opts)
   end
@@ -62,26 +70,30 @@ defmodule Dowser.Elasticsearch.Client do
   ## Public functions — the casting options
 
   @doc """
-  Folds a request-level `:codec` into whichever of `:decoder`/`:encoder` is in
-  play, and removes it from `opts`.
+  Folds the request-level casting options — `:mapping`, `:struct`, `:types`,
+  `:unknown_fields` and `:mapping_failure` — into whichever of
+  `:decoder`/`:encoder` is in play, and removes them from `opts`.
 
-  `:codec` is this package's option, not `Dowser.Client`'s, and the client
-  hands a decoder/encoder only its *own* options — so the short spelling at the
-  call site has to be moved inside them here. It wins over a `:codec` given on
-  the decoder/encoder itself, which is what makes it the per-request tier; see
-  `Dowser.Elasticsearch.Codec` for the rest.
+  They are this package's options, not `Dowser.Client`'s, and the client hands
+  a decoder/encoder only its *own* options — so the short spelling at the call
+  site has to be moved inside them here. They win over the same options given
+  on the decoder/encoder itself, which is what makes them the per-request tier;
+  see `Dowser.Elasticsearch.Codec` for the rest.
 
-  With neither a decoder nor an encoder configured there is nothing to cast, so
-  the option is simply dropped.
+  `:mapping` and `:struct` ask for casting outright, so with no decoder or
+  encoder configured they bring `Dowser.Elasticsearch.Codec` in. The others only
+  adjust a casting that is configured, and are dropped without one.
   """
-  @spec put_codec(keyword()) :: keyword()
-  def put_codec(opts) do
-    case Keyword.pop(opts, :codec) do
-      {nil, opts} ->
+  @spec put_casting(keyword()) :: keyword()
+  def put_casting(opts) do
+    case Keyword.split(opts, @casting_options) do
+      {[], opts} ->
         opts
 
-      {codec, opts} ->
-        opts |> put_codec_on(:decoder, codec) |> put_codec_on(:encoder, codec)
+      {casting, opts} ->
+        opts
+        |> put_casting_on(:decoder, casting)
+        |> put_casting_on(:encoder, casting)
     end
   end
 
@@ -96,7 +108,7 @@ defmodule Dowser.Elasticsearch.Client do
   """
   @spec put_decoder(keyword(), keyword()) :: keyword()
   def put_decoder(opts, extra) do
-    case fetch_option(opts, :decoder) do
+    case in_play(opts, :decoder) do
       nil ->
         opts
 
@@ -114,7 +126,7 @@ defmodule Dowser.Elasticsearch.Client do
   """
   @spec put_encoder(keyword(), keyword(), term()) :: keyword()
   def put_encoder(opts, extra, encode) do
-    case fetch_option(opts, :encoder) do
+    case in_play(opts, :encoder) do
       nil ->
         opts
 
@@ -137,6 +149,7 @@ defmodule Dowser.Elasticsearch.Client do
   @spec resolve_decoder(keyword()) ::
           {Dowser.Client.Decoder.key_fun() | nil, Dowser.Client.Decoder.resolved() | nil}
   def resolve_decoder(opts) do
+    opts = put_casting(opts)
     {:ok, key_fun} = opts |> fetch_option(:keys) |> Dowser.Client.Decoder.key_fun()
 
     decoder =
@@ -162,6 +175,8 @@ defmodule Dowser.Elasticsearch.Client do
   """
   @spec resolve_encoder(keyword()) :: {(term(), keyword() -> term()), keyword()} | nil
   def resolve_encoder(opts) do
+    opts = put_casting(opts)
+
     with encoder when not is_nil(encoder) <- fetch_option(opts, :encoder),
          {:ok, {fun, encoder_opts}} <- Dowser.Client.Encoder.encoder(encoder),
          {:ok, context} <- Config.resolve(repo(opts)) do
@@ -197,22 +212,36 @@ defmodule Dowser.Elasticsearch.Client do
 
   defp merge_option_opts(module_or_fun, extra), do: {module_or_fun, extra}
 
-  defp put_codec_on(opts, key, codec) do
+  # The decoder or encoder a request will use: the one configured, or this
+  # package's codec when the request asks for casting outright.
+  defp in_play(opts, key) do
     case fetch_option(opts, key) do
+      nil ->
+        if Keyword.has_key?(opts, :struct) or Keyword.has_key?(opts, :mapping) do
+          @codec
+        end
+
+      value ->
+        value
+    end
+  end
+
+  defp put_casting_on(opts, key, casting) do
+    case in_play(casting ++ opts, key) do
       nil ->
         opts
 
       value ->
-        Keyword.put(opts, key, put_own_opt(value, :codec, codec))
+        Keyword.put(opts, key, Enum.reduce(casting, value, &put_own_opt(&2, &1)))
     end
   end
 
-  # Unlike `merge_option_opts/2`, this one overwrites: a `:codec` named at the
+  # Unlike `merge_option_opts/2`, this one overwrites: an option named at the
   # call site is the most specific tier, so it wins over one the decoder or
   # encoder was configured with.
-  defp put_own_opt({module_or_fun, own_opts}, key, value) when is_list(own_opts) do
+  defp put_own_opt({module_or_fun, own_opts}, {key, value}) when is_list(own_opts) do
     {module_or_fun, Keyword.put(own_opts, key, value)}
   end
 
-  defp put_own_opt(module_or_fun, key, value), do: {module_or_fun, [{key, value}]}
+  defp put_own_opt(module_or_fun, {key, value}), do: {module_or_fun, [{key, value}]}
 end

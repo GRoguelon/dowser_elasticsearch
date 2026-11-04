@@ -8,8 +8,16 @@ defmodule Dowser.Elasticsearch.MappingCacher do
   This module is Elasticsearch's own instance of it: its own process and ETS
   table, configured from the `:dowser_elasticsearch` application environment.
 
-  Whether the cacher is started at all (and with which options) is decided by
-  the application — see `config :dowser_elasticsearch, mapping_cacher_opts: [...]`.
+  This package doesn't start it. An application that casts documents against
+  the cluster's mappings — the default mapping source — starts it in its own
+  supervision tree, with its options (see `Dowser.MappingCacher`):
+
+      children = [MyApp.Search, {Dowser.Elasticsearch.MappingCacher, ttl: :timer.minutes(10)}]
+
+  Asked without having been started, it reports `{:not_started, cacher}`, which
+  `Dowser.Elasticsearch.Codec` turns into a `Dowser.MappingError` by default. An
+  application that only casts with `:struct`, or with mappings of its own
+  (`config :dowser_elasticsearch, mapping: MyApp.Mappings`), doesn't need it.
 
   ## Mappings that are never fetched
 

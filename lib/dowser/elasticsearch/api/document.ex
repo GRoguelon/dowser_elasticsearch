@@ -23,8 +23,8 @@ defmodule Dowser.Elasticsearch.Document do
 
   All remaining options are forwarded to `Dowser.Client.request/4`, e.g.
   `:repo`, `:params` (query-string parameters), `:format`, `:keys` and
-  `:http_opts` (including `:headers`) — plus `:codec`, this package's own,
-  which picks the per-field codec for this one request (see
+  `:http_opts` (including `:headers`) — plus this package's casting options:
+  `:mapping`, `:struct`, `:types`, `:unknown_fields` and `:mapping_failure` (see
   `Dowser.Elasticsearch.Codec`).
 
   Values are cast automatically wherever `Dowser.Elasticsearch.Codec` is
@@ -311,12 +311,12 @@ defmodule Dowser.Elasticsearch.Document do
   def bulk(operations, opts \\ []) when is_list(operations) do
     {index, opts} = Keyword.pop(opts, :index)
 
-    # The payloads are cast here rather than by `Dowser.Client`, so a
-    # request-level `:codec` has to be folded in before the encoder is
-    # resolved — `Helpers.post/3` would do it too late.
+    # The payloads are cast here rather than by `Dowser.Client`, so the
+    # request-level casting options have to be folded in before the encoder is
+    # resolved — `Client.post/3` would do it too late.
     opts =
       opts
-      |> Client.put_codec()
+      |> Client.put_casting()
       |> Helpers.put_default_format(:req_format, :ndjson)
       |> Helpers.put_idempotent(Bulk.idempotent?(operations))
 

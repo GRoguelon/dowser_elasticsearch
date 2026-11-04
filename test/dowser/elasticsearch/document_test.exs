@@ -274,7 +274,7 @@ defmodule Dowser.Elasticsearch.DocumentTest do
       assert Task.await(server).body == ~s({"script":{"source":"ctx._source.views++"}})
     end
 
-    test ":codec resolves request > repo > config > the default" do
+    test ":types resolves request > repo > config > the default" do
       HTTPStub.start_mapping_cacher!(%{"properties" => %{"title" => %{"type" => "text"}}})
 
       body = ~s({"_index":"posts","_source":{"title":"hello"}})
@@ -292,8 +292,8 @@ defmodule Dowser.Elasticsearch.DocumentTest do
       assert title.([]) == "hello"
 
       # 3. the application environment.
-      Application.put_env(:dowser_elasticsearch, :codec, UpcaseCodec)
-      on_exit(fn -> Application.delete_env(:dowser_elasticsearch, :codec) end)
+      Application.put_env(:dowser_elasticsearch, :types, UpcaseCodec)
+      on_exit(fn -> Application.delete_env(:dowser_elasticsearch, :types) end)
       assert title.([]) == "HELLO"
 
       # 2. the repo's own decoder, over the application environment.
@@ -303,7 +303,7 @@ defmodule Dowser.Elasticsearch.DocumentTest do
                Document.get("posts", "1",
                  repo: [
                    endpoint: "http://127.0.0.1:#{port}",
-                   decoder: {Dowser.Elasticsearch.Codec, codec: ExclaimCodec}
+                   decoder: {Dowser.Elasticsearch.Codec, types: ExclaimCodec}
                  ]
                )
 
@@ -311,16 +311,16 @@ defmodule Dowser.Elasticsearch.DocumentTest do
       assert doc["_source"]["title"] == "hello!"
 
       # 1. the request, over both.
-      assert title.(codec: ExclaimCodec) == "hello!"
+      assert title.(types: ExclaimCodec) == "hello!"
 
       {port, server} = start_server(json_response(body))
 
       assert {:ok, doc} =
                Document.get("posts", "1",
-                 codec: ExclaimCodec,
+                 types: ExclaimCodec,
                  repo: [
                    endpoint: "http://127.0.0.1:#{port}",
-                   decoder: {Dowser.Elasticsearch.Codec, codec: UpcaseCodec}
+                   decoder: {Dowser.Elasticsearch.Codec, types: UpcaseCodec}
                  ]
                )
 

@@ -107,15 +107,20 @@ defmodule Dowser.Elasticsearch.CodecTest do
       assert ip == {127, 0, 0, 1}
     end
 
-    test "with no mapping cacher running, values pass through but keys are still processed" do
+    test "with no mapping cacher started, decoding fails rather than casting nothing" do
       body = %{
         "_index" => "posts",
         "_id" => "1",
         "_source" => %{"published_at" => "2026-08-11T00:00:00.000Z"}
       }
 
+      error = assert_raise MappingError, fn -> Codec.decode(body, decode_opts()) end
+
+      assert error.reason == {:not_started, Dowser.Elasticsearch.MappingCacher}
+
+      # …unless the application says identity is fine.
       assert %{"_id" => "1", "_source" => %{"published_at" => "2026-08-11T00:00:00.000Z"}} =
-               Codec.decode(body, decode_opts())
+               Codec.decode(body, decode_opts(mapping_failure: :ignore))
     end
 
     test "key_fn is applied throughout, including inside _source" do
@@ -542,8 +547,25 @@ defmodule Dowser.Elasticsearch.CodecTest do
     end
 
     test "no mapping to be had is not a failure" do
-      # No cacher running at all: nothing to cast against, and nothing failed.
+      # A cacher with nothing to say about the index: nothing to cast against,
+      # and nothing failed.
+      HTTPStub.start_mapping_cacher!(nil)
+
       assert %{"_source" => %{"published_at" => "2026-08-11T00:00:00.000Z"}} =
+               Codec.decode(
+                 %{
+                   "_index" => "posts",
+                   "_source" => %{"published_at" => "2026-08-11T00:00:00.000Z"}
+                 },
+                 decode_opts()
+               )
+    end
+
+    test "the application environment sets the default mapping source" do
+      Application.put_env(:dowser_elasticsearch, :mapping, @mapping)
+      on_exit(fn -> Application.delete_env(:dowser_elasticsearch, :mapping) end)
+
+      assert %{"_source" => %{"published_at" => ~U[2026-08-11 00:00:00.000Z]}} =
                Codec.decode(
                  %{
                    "_index" => "posts",
@@ -554,7 +576,7 @@ defmodule Dowser.Elasticsearch.CodecTest do
     end
   end
 
-  describe "decode/2 — opts[:codec]" do
+  describe "decode/2 — opts[:types]" do
     defmodule UpcaseCodec do
       @behaviour Dowser.Type
 
@@ -574,7 +596,7 @@ defmodule Dowser.Elasticsearch.CodecTest do
       body = %{"_index" => "posts", "_source" => %{"title" => "hello"}}
 
       assert %{"_source" => %{"title" => "HELLO"}} =
-               Codec.decode(body, decode_opts(codec: UpcaseCodec))
+               Codec.decode(body, decode_opts(types: UpcaseCodec))
 
       assert %{"_source" => %{"title" => "hello"}} = Codec.decode(body, decode_opts())
     end
@@ -596,10 +618,13 @@ defmodule Dowser.Elasticsearch.CodecTest do
       assert Codec.encode(document, context_opts()) == document
     end
 
-    test "with no mapping cacher running, values pass through" do
+    test "with no mapping cacher started, encoding fails rather than casting nothing" do
       document = %{"published_at" => ~U[2026-08-11 00:00:00Z]}
 
-      assert Codec.encode(document, context_opts(index: "posts")) == document
+      assert_raise MappingError, fn -> Codec.encode(document, context_opts(index: "posts")) end
+
+      assert Codec.encode(document, context_opts(index: "posts", mapping_failure: :ignore)) ==
+               document
     end
 
     defmodule DowncaseCodec do
@@ -613,12 +638,12 @@ defmodule Dowser.Elasticsearch.CodecTest do
       def dump(value, field), do: Dowser.Type.dump(value, field)
     end
 
-    test "opts[:codec] replaces the default codec" do
+    test "opts[:types] replaces the default type module" do
       HTTPStub.start_mapping_cacher!(%{"properties" => %{"title" => %{"type" => "text"}}})
 
       document = %{"title" => "HELLO"}
 
-      assert Codec.encode(document, context_opts(index: "posts", codec: DowncaseCodec)) ==
+      assert Codec.encode(document, context_opts(index: "posts", types: DowncaseCodec)) ==
                %{"title" => "hello"}
 
       assert Codec.encode(document, context_opts(index: "posts")) == document

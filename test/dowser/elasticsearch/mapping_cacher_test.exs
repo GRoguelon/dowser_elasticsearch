@@ -156,12 +156,14 @@ defmodule Dowser.Elasticsearch.MappingCacherTest do
   end
 
   describe "lookup/2" do
-    test "returns {:ok, nil} when there is no index, no context or no cacher" do
+    test "returns {:ok, nil} when there is no index or no repo" do
       assert {:ok, nil} = MappingCacher.lookup(@context, nil)
       assert {:ok, nil} = MappingCacher.lookup(nil, "posts")
+    end
 
-      # No cacher running: an application that doesn't cast, not a failed fetch.
-      assert {:ok, nil} = MappingCacher.lookup(@context, "posts")
+    test "reports a cacher that isn't started — the application starts it" do
+      assert {:error, {:not_started, Dowser.Elasticsearch.MappingCacher}} =
+               MappingCacher.lookup(@context, "posts")
     end
 
     test "returns the error when the fetch fails, where fetch/2 returns nil" do

@@ -312,9 +312,21 @@ index each source is going to and where in the request body it sits. A query
 is never cast, since a query value has no mapping entry to anchor it: build
 queries in the shape Elasticsearch expects.
 
-Mappings are fetched once and cached by `Dowser.Elasticsearch.MappingCacher`,
-which the application supervises automatically. A `flattened` field, and an
-object mapped `"enabled": false`, are returned exactly as stored.
+Mappings are fetched once and cached by `Dowser.Elasticsearch.MappingCacher`. This
+package doesn't start it: add it to your supervision tree, next to the repo —
+
+```elixir
+children = [MyApp.Search, Dowser.Elasticsearch.MappingCacher]
+```
+
+— or give the mappings yourself, and skip the cluster entirely:
+`config :dowser_elasticsearch, mapping: MyApp.Mappings` (a `Dowser.Mapping` module),
+or `struct:` on a call (a document module's own mapping). Casting against the
+cluster's mappings with no cacher started fails with a `Dowser.MappingError`
+naming it, rather than leaving every value uncast.
+
+A `flattened` field, and an object mapped `"enabled": false`, are returned
+exactly as stored.
 
 ### What is cast
 
@@ -405,19 +417,108 @@ Delegating last inherits the built-in casts, the `nil` short-circuit and the
 fall-through to identity; a clause matching a type `Dowser.Type` already
 handles replaces that cast.
 
-Point the casting at it globally, per repo, or per request — most specific
-wins:
+Point the casting at it with `:types` — globally, per repo, or per request,
+most specific first:
 
 ```elixir
 # globally
-config :dowser_elasticsearch, codec: MyApp.Type
+config :dowser_elasticsearch, types: MyApp.Type
 
 # per repo, alongside the pass it belongs to
-decoder: {Dowser.Elasticsearch.Codec, codec: MyApp.Type}
+decoder: {Dowser.Elasticsearch.Codec, types: MyApp.Type}
 
 # per request, on any API function
-Document.get("posts", "1", codec: MyApp.Type)
+Document.get("posts", "1", types: MyApp.Type)
 ```
+
+### The casting options
+
+`:types` is one of five options deciding how documents are cast, all set the
+same three ways:
+
+| Option | Decides | Default |
+| --- | --- | --- |
+| `:mapping` | where the mapping comes from: a map, a `Dowser.Mapping` module, or a document module | `config :dowser_elasticsearch, mapping:`, else the cluster's via `Dowser.Elasticsearch.MappingCacher`, which you start |
+| `:struct` | load each document into a document module's struct (`Dowser.Schema`), and dump it back — per call only | maps |
+| `:types` | the `Dowser.Type` module leaf values go through | `Dowser.Type` |
+| `:unknown_fields` | `:keep`, or `:raise` a `Dowser.UnknownFieldError` for a field the mapping doesn't declare | `:keep` |
+| `:mapping_failure` | `:error`, `:warn` or `:ignore` when the mapping can't be fetched | `:error` |
+
+```elixir
+Document.get("posts", "1", struct: MyApp.Post)          # {:ok, %{"_source" => %MyApp.Post{}}}
+Document.get("posts", "1", mapping: MyApp.Post)         # cast with its mapping, still a map
+Search.search(query, index: "posts", unknown_fields: :raise)
+```
+
+`:mapping` and `:struct` turn casting on for that call even on a repo with no
+`:decoder`/`:encoder` configured.
+
+## Testing
+
+A repo is where a test takes over: every request goes through it, and nothing
+else needs replacing.
+
+### Stub the HTTP layer, keep the pipeline
+
+`Dowser.Client.HTTP.Stub` answers every request the test process makes, while
+everything else — the repo, URL building, JSON, casting — runs as in
+production. Point the calls at an ad-hoc repo (or your own, configured in
+`config/test.exs`); stubs are per process, so tests stay `async: true`:
+
+```elixir
+test "loads a post" do
+  Dowser.Client.HTTP.Stub.stub(fn :get, "http://localhost:9200/posts/_doc/1", _headers, _body, _opts ->
+    Dowser.Client.HTTP.Stub.json(200, %{
+      "_index" => "posts",
+      "_id" => "1",
+      "_source" => %{"title" => "hi", "published_at" => "2026-08-11T00:00:00.000Z"}
+    })
+  end)
+
+  assert {:ok, %{"_source" => %MyApp.Post{title: "hi"}}} =
+           Dowser.Elasticsearch.Document.get("posts", "1",
+             repo: [endpoint: "http://localhost:9200"],
+             struct: MyApp.Post
+           )
+end
+```
+
+Casting against the cluster's mappings needs mappings in tests too: give them
+with `config :dowser_elasticsearch, mappings: %{"posts" => %{...}}` (no cacher
+needed), `mapping:` / `struct:`, or start `Dowser.Elasticsearch.MappingCacher` with
+`start_supervised!/1` and `put/3` the mappings into it.
+
+### Mock the repo
+
+For a unit test that only needs a canned answer, mock the repo itself: a repo
+is the `Dowser.Repo` behaviour, so [Mox](https://hexdocs.pm/mox) can stand in
+for one.
+
+```elixir
+# test/test_helper.exs
+Mox.defmock(MyApp.SearchMock, for: Dowser.Repo)
+
+# in your test
+Mox.expect(MyApp.SearchMock, :request, fn :post, "/posts/_search", _query, _opts ->
+  {:ok, %Dowser.Client.Response{status: 200, headers: %{}, body: %{"hits" => %{"hits" => []}}}}
+end)
+
+assert {:ok, %{"hits" => %{"hits" => []}}} =
+         Dowser.Elasticsearch.Search.search(%{query: %{match_all: %{}}}, index: "posts", repo: MyApp.SearchMock)
+```
+
+The mock stands in for the whole transport — encoding, decoding and casting
+included — so its body is exactly what the caller gets. Set
+`config :dowser_elasticsearch, default_repo: MyApp.SearchMock` in `config/test.exs`
+to have every call that names no repo go to it.
+
+### Against a real cluster
+
+Point a repo at a local cluster in `config/test.exs`, and start the mapping
+cacher if the tests cast against the cluster's mappings. Tests that share an
+index can't run concurrently: run them `async: false`, or give each test
+indices of its own (`"posts_#{System.unique_integer([:positive])}"`), created
+in `setup` and deleted in `on_exit`.
 
 ## Compatibility
 

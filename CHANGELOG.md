@@ -29,6 +29,18 @@ it.
   its own configuration — a cluster per tenant, say — chosen per process
   (`put_dynamic_repo/1`) or per call (`repo: {MyApp.Search, :tenant_a}`). See
   `Dowser.Repo`.
+- **More casting options.** Every API call — and a repo's codec, and the
+  application environment — takes `:struct` (load each document into a
+  document module's struct, and dump it back), `:mapping` (now also a
+  `Dowser.Mapping` module or a document module, not only a map) and
+  `:unknown_fields` (`:raise` returns a `Dowser.UnknownFieldError` for a field
+  the mapping doesn't declare). `:struct` and `:mapping` turn casting on for
+  that call even on a repo with no decoder configured.
+- **`config :dowser_elasticsearch, mapping: ...`** sets the mapping source for
+  the whole application — a `Dowser.Mapping` module, say — in place of the
+  cluster.
+- **A Testing section in the README**: stubbing the HTTP layer behind a repo,
+  mocking the repo itself with Mox, and running against a real cluster.
 - **`long_range` is cast to a `Range`**, like `integer_range`.
 - **`NaiveDateTime` and `Time` dates**, for fields formatted
   `strict_date_hour_minute_second(_millis)` and
@@ -37,6 +49,9 @@ it.
 ### Changed
 
 - **Breaking:** requires `dowser_client` `~> 0.4.0`.
+- **Breaking:** casting against the cluster's mappings with no
+  `Dowser.Elasticsearch.MappingCacher` started returns a `Dowser.MappingError`
+  naming it — it used to leave every value uncast without a word.
 - **Breaking:** the `:context` option is now `:repo` on every API function, and
   named contexts (`config :dowser_client, contexts: [...]`) are gone: define a
   repo, and set `:default_repo`. A call that still passes `:context` returns an
@@ -51,8 +66,10 @@ it.
   `date_range` needs `strict_date`, an `integer_range`/`long_range` integer
   `gte`/`lte` bounds. Anything else comes back as stored.
 - **Breaking:** custom field codecs implement `@behaviour Dowser.Type` and
-  delegate to `Dowser.Type.load/2` and `Dowser.Type.dump/2`. The `:codec` option
-  still names them, at every tier.
+  delegate to `Dowser.Type.load/2` and `Dowser.Type.dump/2`.
+- **Breaking:** the `:codec` option is `:types` — per request, on the codec,
+  and in `config :dowser_elasticsearch, ...`. One still set to `:codec` is an
+  error naming `:types`.
 - **Breaking:** `Dowser.Elasticsearch.MappingCacher.put/3` takes `repo:`, and
   raises without one — it used to store nothing when no `:default` context
   existed.
@@ -63,6 +80,11 @@ it.
 
 ### Removed
 
+- **Breaking:** the application callback, and with it the mapping cacher it
+  started on its own. An application that casts against the cluster's mappings
+  adds `Dowser.Elasticsearch.MappingCacher` to its own supervision tree; `config
+  :dowser_elasticsearch, mapping_cacher_opts: [...]` becomes that child's
+  options.
 - **Breaking:** `Dowser.Elasticsearch.Codec.Date`, `.Binary`, `.DateRange`,
   `.GeoPoint`, `.IP` and `.Range` — they are `Dowser.Type.Date` and so on in
   `dowser_client`. `Dowser.Elasticsearch.Codec` no longer has `load/2`, `dump/2`
