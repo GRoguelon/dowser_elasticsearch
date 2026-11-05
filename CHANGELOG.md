@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2026-11-05
+
+No breaking change: index migrations, from `dowser_client` 0.5.
+
+### Added
+
+- **Migrations.** Every `use Dowser.Elasticsearch.Repo` now names
+  `Dowser.Elasticsearch.Migration.Adapter` (`__migration_adapter__/0`), which
+  runs `dowser_client`'s migrations (`Dowser.Migration`, `mix dowser.migrate`)
+  against Elasticsearch: tracking and lock in the `dowser_schema_migrations`
+  index, copies through `_reindex` followed with the tasks API, write blocks
+  through the add-block API.
+- **Formatter export.** `import_deps: [:dowser_elasticsearch]` in an
+  application's `.formatter.exs` keeps the migration DSL (`add :status, ...`)
+  free of parentheses.
+
+### Changed
+
+- Requires `dowser_client` `~> 0.5.0`.
+
 ## [0.5.0] - 2026-11-04
 
 Breaking — see [UPGRADE_0_5.md](UPGRADE_0_5.md) for the path from 0.4.

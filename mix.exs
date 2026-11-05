@@ -2,7 +2,7 @@ defmodule DowserElasticsearch.MixProject do
   use Mix.Project
 
   @source_url "https://github.com/GRoguelon/dowser_elasticsearch"
-  @version "0.5.0"
+  @version "0.6.0"
 
   def project do
     [
@@ -79,6 +79,7 @@ defmodule DowserElasticsearch.MixProject do
           Dowser.Elasticsearch.HealthReport,
           Dowser.Elasticsearch.Index,
           Dowser.Elasticsearch.Info,
+          Dowser.Elasticsearch.Migration.Adapter,
           Dowser.Elasticsearch.Reindex,
           Dowser.Elasticsearch.Repo,
           Dowser.Elasticsearch.Repository,
@@ -113,7 +114,7 @@ defmodule DowserElasticsearch.MixProject do
     if path = System.get_env("DOWSER_CLIENT_PATH") do
       {:dowser_client, path: path, override: true}
     else
-      {:dowser_client, "~> 0.4.0"}
+      {:dowser_client, "~> 0.5.0"}
     end
   end
 end

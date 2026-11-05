@@ -24,6 +24,9 @@ the endpoint itself — instead of a hand-rolled query builder.
   the index-related functions of `Search`, `Document`, and `Index` to a
   fixed or computed index, so your code stops repeating `index: "posts"` on
   every call.
+- **Migrations, like Ecto's.** `mix dowser.migrate` changes your indices
+  from versioned migration files — each index behind an alias, copied into a
+  new one when Elasticsearch can't change it in place.
 - **Optional type casting.** `Dowser.Elasticsearch.Codec` casts dates, ranges,
   IP addresses and other Elasticsearch types to and from Elixir terms, per
   index mapping — into maps, or into structs of your own (`struct:`).
@@ -37,7 +40,7 @@ Add `dowser_elasticsearch` to your list of dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:dowser_elasticsearch, "~> 0.5.0"}
+    {:dowser_elasticsearch, "~> 0.6.0"}
   ]
 end
 ```
@@ -222,6 +225,48 @@ Streamer.stream(%{query: ..., slice: %{id: 2, max: 8}}, pit: pit_id)
 
 There is no `stream!/2`: a stream has nothing to unwrap, and raises on
 enumeration anyway.
+
+## Migrations
+
+An application changes its indices with migrations, as it changes its
+database tables with Ecto's: `mix dowser.gen.migration`, `mix dowser.migrate`,
+`mix dowser.rollback`, from `dowser_client`. Every `use
+Dowser.Elasticsearch.Repo` runs them against Elasticsearch through
+`Dowser.Elasticsearch.Migration.Adapter`, so there is nothing to configure but
+the repos to migrate:
+
+```elixir
+# config/config.exs
+config :my_app, dowser_repos: [MyApp.Search]
+
+# .formatter.exs — the migration DSL without parentheses
+[import_deps: [:dowser_elasticsearch], ...]
+```
+
+```elixir
+# priv/dowser/migrations/20261104120000_create_events.exs
+defmodule MyApp.Search.Migrations.CreateEvents do
+  use Dowser.Migration
+
+  def change do
+    create_index "events", %{
+      settings: %{number_of_shards: 1},
+      mappings: %{dynamic: :strict, properties: %{title: %{type: :text}}}
+    }
+  end
+end
+```
+
+```sh
+mix dowser.migrate --dry-run --reindex   # the requests it would send
+mix dowser.migrate --reindex             # copies the indices it must
+mix dowser.rollback
+```
+
+`"events"` is an alias of `events_20261104120000` — `events-20261104120000`
+with `create_index "events", body, separator: "-"`. The migrations run are
+recorded in the `dowser_schema_migrations` index, which also holds the lock
+keeping two runs apart. See `Dowser.Migration` and `Dowser.Migrator`.
 
 ## Repository pattern
 
