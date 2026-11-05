@@ -39,6 +39,12 @@ defmodule Dowser.Elasticsearch.Repo do
 
   See "Static and dynamic repos" in `Dowser.Repo`.
 
+  ## Migrations
+
+  A repo's indices can be changed with migrations — `mix dowser.gen.migration`,
+  `mix dowser.migrate`; see `Dowser.Migration` and `Dowser.Migrator`. They run
+  through `Dowser.Elasticsearch.Migration.Adapter`.
+
   ## Checking the engine
 
   With `verify: true`, the repo checks at startup that its endpoint is an
@@ -65,6 +71,9 @@ defmodule Dowser.Elasticsearch.Repo do
       def verify(config) do
         Dowser.Elasticsearch.Repo.verify(config)
       end
+
+      @doc false
+      def __migration_adapter__, do: Dowser.Elasticsearch.Migration.Adapter
     end
   end
 
